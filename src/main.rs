@@ -6,6 +6,8 @@ mod gdt;
 mod interrupts;
 mod memory;
 mod panic;
+mod serial;
+mod vga_buffer;
 
 use limine::request::{ExecutableAddressRequest, HhdmRequest, MemmapRequest};
 use limine::BaseRevision;
@@ -42,6 +44,8 @@ static KERNEL_ADDRESS_REQUEST: ExecutableAddressRequest = ExecutableAddressReque
 
 #[unsafe(no_mangle)]
 pub extern "C" fn kernel_main() -> ! {
+    serial_println!("[kernel] booting...");
+
     // ── Step 1: Consume all Limine responses immediately.
     // After GDT/page table switch, Limine's mappings may be gone.
 
