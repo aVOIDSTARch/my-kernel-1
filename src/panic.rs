@@ -2,7 +2,9 @@ use core::panic::PanicInfo;
 
 #[cfg(not(test))]
 #[panic_handler]
-fn panic(_info: &PanicInfo) -> ! {
+fn panic(info: &PanicInfo) -> ! {
+    use crate::serial_println;
+    serial_println!("[PANIC] {}", info);
     loop {
         x86_64::instructions::hlt();
     }

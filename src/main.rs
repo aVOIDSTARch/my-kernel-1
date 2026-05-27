@@ -14,15 +14,23 @@ mod testing;
 mod vga_buffer;
 
 use limine::request::{ExecutableAddressRequest, HhdmRequest, MemmapRequest};
-use limine::BaseRevision;
+use limine::{BaseRevision, RequestsEndMarker, RequestsStartMarker};
 
 // ── Limine Protocol Anchors ───────────────────────────────────────────────
-// All must be #[used] or the compiler eliminates them as dead statics.
-// All must be in .limine_requests or Limine will not find them.
+// Layout required for base revision 2+:
+//   .limine_requests_start  → RequestsStartMarker (+ BaseRevision)
+//   .limine_requests        → actual requests
+//   .limine_requests_end    → RequestsEndMarker
 
 #[used]
-#[unsafe(link_section = ".limine_requests")]
-static BASE_REVISION: BaseRevision = BaseRevision::new();
+#[unsafe(link_section = ".limine_requests_start")]
+static REQUESTS_START: RequestsStartMarker = RequestsStartMarker::new();
+
+// Request base revision 2 — the highest revision Limine v8 supports.
+// BaseRevision::new() requests revision 6 which Limine v8 does not support.
+#[used]
+#[unsafe(link_section = ".limine_requests_start")]
+static BASE_REVISION: BaseRevision = BaseRevision::with_revision(2);
 
 #[used]
 #[unsafe(link_section = ".limine_requests")]
@@ -36,6 +44,10 @@ static MEMORY_MAP_REQUEST: MemmapRequest = MemmapRequest::new();
 #[unsafe(link_section = ".limine_requests")]
 static KERNEL_ADDRESS_REQUEST: ExecutableAddressRequest = ExecutableAddressRequest::new();
 
+#[used]
+#[unsafe(link_section = ".limine_requests_end")]
+static REQUESTS_END: RequestsEndMarker = RequestsEndMarker::new();
+
 // ── Entry Point ───────────────────────────────────────────────────────────
 // State at entry (guaranteed by Limine):
 //   - Long mode, ring 0
@@ -48,14 +60,10 @@ static KERNEL_ADDRESS_REQUEST: ExecutableAddressRequest = ExecutableAddressReque
 
 #[unsafe(no_mangle)]
 pub extern "C" fn kernel_main() -> ! {
+    // Serial is safe before anything else — port I/O, no memory mapping needed.
     serial_println!("[kernel] booting...");
-    println!("my-kernel booting...");
 
-    assert!(
-        BASE_REVISION.is_supported(),
-        "Limine base revision not supported"
-    );
-
+    // Consume all Limine responses before GDT/page-table switch may invalidate them.
     let hhdm_offset = HHDM_REQUEST
         .response()
         .expect("Limine: no HHDM response")
@@ -81,6 +89,11 @@ pub extern "C" fn kernel_main() -> ! {
     };
     let kernel_phys_end = kernel_phys_start + kernel_size;
 
+    serial_println!("[kernel] hhdm={:#x}", hhdm_offset);
+
+    // VGA buffer is at phys 0xb8000; only safe via HHDM under Limine v7+.
+    vga_buffer::init(hhdm_offset);
+    println!("my-kernel booting...");
     println!("kernel: phys {:#x}..{:#x}  hhdm +{:#x}",
         kernel_phys_start, kernel_phys_end, hhdm_offset);
 
@@ -108,7 +121,9 @@ pub extern "C" fn kernel_main() -> ! {
     test_main();
 
     println!("kernel ready.");
+    serial_println!("[kernel] halted.");
     loop {
         x86_64::instructions::hlt();
     }
+
 }

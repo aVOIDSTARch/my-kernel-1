@@ -1,9 +1,15 @@
-// vga_buffer.rs
-
 use volatile::Volatile;
 use core::fmt;
+use core::sync::atomic::{AtomicU64, Ordering};
 use lazy_static::lazy_static;
 use spin::Mutex;
+
+static HHDM_OFFSET: AtomicU64 = AtomicU64::new(0);
+
+/// Must be called with the HHDM offset from Limine before the first println!.
+pub fn init(hhdm_offset: u64) {
+    HHDM_OFFSET.store(hhdm_offset, Ordering::Relaxed);
+}
 
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -131,11 +137,13 @@ impl fmt::Write for Writer {
 }
 
 lazy_static! {
-  pub static ref WRITER: Mutex<Writer> = Mutex::new(Writer {
-    column_position: 0,
-    color_code: ColorCode::new(Color::Yellow, Color::Black),
-    buffer: unsafe { &mut *(0xb8000 as *mut Buffer) },
-  });
+    pub static ref WRITER: Mutex<Writer> = Mutex::new(Writer {
+        column_position: 0,
+        color_code: ColorCode::new(Color::Yellow, Color::Black),
+        buffer: unsafe {
+            &mut *((HHDM_OFFSET.load(Ordering::Relaxed) + 0xb8000) as *mut Buffer)
+        },
+    });
 }
 
 // MACROS // ------

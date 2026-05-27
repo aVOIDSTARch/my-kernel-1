@@ -3,7 +3,7 @@ OUTPUT_ARCH(x86_64)
 ENTRY(kernel_main)
 
 PHDRS {
-    requests PT_LOAD FLAGS(4);
+    requests PT_LOAD FLAGS(6);
     text     PT_LOAD FLAGS(5);
     rodata   PT_LOAD FLAGS(4);
     data     PT_LOAD FLAGS(6);
