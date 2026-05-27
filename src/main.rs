@@ -1,12 +1,16 @@
 #![no_std]
 #![no_main]
 #![feature(abi_x86_interrupt)]
+#![feature(custom_test_frameworks)]
+#![test_runner(crate::testing::test_runner)]
+#![reexport_test_harness_main = "test_main"]
 
 mod gdt;
 mod interrupts;
 mod memory;
 mod panic;
 mod serial;
+mod testing;
 mod vga_buffer;
 
 use limine::request::{ExecutableAddressRequest, HhdmRequest, MemmapRequest};
@@ -109,6 +113,9 @@ pub extern "C" fn kernel_main() -> ! {
     // ── Step 6: Enable interrupts.
     // The PIC will now begin delivering timer ticks and other IRQs.
     x86_64::instructions::interrupts::enable();
+
+    #[cfg(test)]
+    test_main();
 
     // ── Kernel is operational. Halt loop.
     loop {

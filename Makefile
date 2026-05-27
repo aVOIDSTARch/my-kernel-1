@@ -1,8 +1,8 @@
 KERNEL  := target/x86_64-crusty_os/debug/kernel
 ISO     := my-kernel.iso
-LIMINE  := ../limine  # adjust to wherever you cloned limine
+LIMINE  := ../../rust-os/limine
 
-.PHONY: all run clean iso
+.PHONY: all run run-kvm test clean iso
 
 all: iso
 
@@ -53,6 +53,9 @@ run-kvm: iso
 		-no-reboot \
 		-no-shutdown
 
+test:
+	cargo test
+
 clean:
 	cargo clean
-	rm -rf iso_root $(ISO) qemu.log
+	rm -rf iso_root $(ISO) target/test.iso target/test-iso-root qemu.log

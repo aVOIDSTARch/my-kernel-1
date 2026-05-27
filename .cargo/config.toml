@@ -2,6 +2,7 @@
 target = "x86_64-crusty_os.json"
 
 [target.x86_64-crusty_os]
+runner   = ["./runner.sh"]
 rustflags = ["-C", "link-arg=-Tkernel.ld"]
 
 [unstable]

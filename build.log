@@ -1,279 +1,3 @@
-   Compiling compiler_builtins v0.1.160 (/Users/louisc/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/compiler-builtins/compiler-builtins)
-   Compiling core v0.0.0 (/Users/louisc/.rustup/toolchains/nightly-aarch64-apple-darwin/lib/rustlib/src/rust/library/core)
-   Compiling bit_field v0.10.3
-   Compiling bitflags v2.11.1
-   Compiling scopeguard v1.2.0
-   Compiling volatile v0.4.6
-   Compiling limine v0.6.3
-   Compiling pc-keyboard v0.9.0
-   Compiling lock_api v0.4.14
-   Compiling x86_64 v0.14.13
-   Compiling x86_64 v0.15.4
-   Compiling spin v0.9.8
-   Compiling lazy_static v1.5.0
-   Compiling pic8259 v0.10.4
-   Compiling my-kernel v0.1.0 (/Users/louisc/kernel/my-kernel)
-warning: unexpected `cfg` condition value: `alloc`
-  --> src/interrupts/stats.rs:19:7
-   |
-19 | #[cfg(feature = "alloc")]
-   |       ^^^^^^^^^^^^^^^^^ help: remove the condition
-   |
-   = note: no expected values for `feature`
-   = help: consider adding `alloc` as a feature in `Cargo.toml`
-   = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
-   = note: `#[warn(unexpected_cfgs)]` on by default
-
-warning: unnecessary `unsafe` block
-  --> src/gdt.rs:21:44
-   |
-21 | ...ddr::from_ptr(unsafe { &raw const DOUBLE_FAULT_STACK });
-   |                  ^^^^^^ unnecessary `unsafe` block
-   |
-   = note: `#[warn(unused_unsafe)]` (part of `#[warn(unused)]`) on by default
-
-warning: unnecessary `unsafe` block
-  --> src/gdt.rs:25:44
-   |
-25 | ...ddr::from_ptr(unsafe { &raw const NMI_STACK });
-   |                  ^^^^^^ unnecessary `unsafe` block
-
-warning: unnecessary `unsafe` block
-  --> src/gdt.rs:29:44
-   |
-29 | ...ddr::from_ptr(unsafe { &raw const MACHINE_CHECK_STACK });
-   |                  ^^^^^^ unnecessary `unsafe` block
-
-warning: unnecessary `unsafe` block
- --> src/interrupts/apic.rs:8:18
-  |
-8 |     let result = unsafe { core::arch::x86_64::__cpuid(1) };
-  |                  ^^^^^^ unnecessary `unsafe` block
-
-warning[E0133]: call to unsafe function `core::ptr::const_ptr::<impl *const T>::read_volatile` is unsafe and requires unsafe block
-  --> src/interrupts/apic.rs:30:9
-   |
-30 |         ptr.read_volatile()
-   |         ^^^^^^^^^^^^^^^^^^^ call to unsafe function
-   |
-   = note: consult the function's documentation for information on how to avoid undefined behavior
-note: an unsafe function restricts its caller, but its body is safe by default
-  --> src/interrupts/apic.rs:28:5
-   |
-28 |     unsafe fn read(&self, offset: u32) -> u32 {
-   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-   = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
-   = note: `#[warn(unsafe_op_in_unsafe_fn)]` (part of `#[warn(rust_2024_compatibility)]`) on by default
-
-warning[E0133]: call to unsafe function `core::ptr::mut_ptr::<impl *mut T>::write_volatile` is unsafe and requires unsafe block
-  --> src/interrupts/apic.rs:35:9
-   |
-35 |         ptr.write_volatile(val);
-   |         ^^^^^^^^^^^^^^^^^^^^^^^ call to unsafe function
-   |
-   = note: consult the function's documentation for information on how to avoid undefined behavior
-note: an unsafe function restricts its caller, but its body is safe by default
-  --> src/interrupts/apic.rs:33:5
-   |
-33 |     unsafe fn write(&self, offset: u32, val: u32) {
-   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-   = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
-
-warning[E0133]: call to unsafe function `interrupts::apic::LocalApic::write` is unsafe and requires unsafe block
-  --> src/interrupts/apic.rs:44:9
-   |
-44 |         self.write(0xF0, svr);
-   |         ^^^^^^^^^^^^^^^^^^^^^ call to unsafe function
-   |
-   = note: consult the function's documentation for information on how to avoid undefined behavior
-note: an unsafe function restricts its caller, but its body is safe by default
-  --> src/interrupts/apic.rs:40:5
-   |
-40 |     pub unsafe fn init(&self, spurious_vector: u8) {
-   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-   = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
-
-warning[E0133]: call to unsafe function `interrupts::apic::LocalApic::write` is unsafe and requires unsafe block
-  --> src/interrupts/apic.rs:49:9
-   |
-49 |         self.write(0xB0, 0);
-   |         ^^^^^^^^^^^^^^^^^^^ call to unsafe function
-   |
-   = note: consult the function's documentation for information on how to avoid undefined behavior
-note: an unsafe function restricts its caller, but its body is safe by default
-  --> src/interrupts/apic.rs:48:5
-   |
-48 |     pub unsafe fn end_of_interrupt(&self) {
-   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-   = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
-
-warning[E0133]: call to unsafe function `interrupts::apic::LocalApic::write` is unsafe and requires unsafe block
-  --> src/interrupts/apic.rs:54:9
-   |
-54 |         self.write(0x310, (dest_apic_id as u32) << 24);
-   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ call to unsafe function
-   |
-   = note: consult the function's documentation for information on how to avoid undefined behavior
-note: an unsafe function restricts its caller, but its body is safe by default
-  --> src/interrupts/apic.rs:52:5
-   |
-52 |     pub unsafe fn send_ipi(&self, dest_apic_id: u8, vector: u8) {
-   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-   = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
-
-warning[E0133]: call to unsafe function `interrupts::apic::LocalApic::write` is unsafe and requires unsafe block
-  --> src/interrupts/apic.rs:56:9
-   |
-56 |         self.write(0x300, vector as u32 | (1 << 14)); // Assert,...
-   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ call to unsafe function
-   |
-   = note: consult the function's documentation for information on how to avoid undefined behavior
-   = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
-
-warning[E0133]: call to unsafe function `x86_64::instructions::port::PortGeneric::<T, A>::write` is unsafe and requires unsafe block
-  --> src/interrupts/apic.rs:67:5
-   |
-67 |     master_data.write(0xFF);
-   |     ^^^^^^^^^^^^^^^^^^^^^^^ call to unsafe function
-   |
-   = note: consult the function's documentation for information on how to avoid undefined behavior
-note: an unsafe function restricts its caller, but its body is safe by default
-  --> src/interrupts/apic.rs:63:1
-   |
-63 | pub unsafe fn disable_pic() {
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^
-   = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
-
-warning[E0133]: call to unsafe function `x86_64::instructions::port::PortGeneric::<T, A>::write` is unsafe and requires unsafe block
-  --> src/interrupts/apic.rs:68:5
-   |
-68 |     slave_data.write(0xFF);
-   |     ^^^^^^^^^^^^^^^^^^^^^^ call to unsafe function
-   |
-   = note: consult the function's documentation for information on how to avoid undefined behavior
-   = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
-
-warning[E0133]: call to unsafe function `core::intrinsics::transmute` is unsafe and requires unsafe block
-  --> src/interrupts/dispatch.rs:32:23
-   |
-32 |         let f: fn() = core::mem::transmute(ptr);
-   |                       ^^^^^^^^^^^^^^^^^^^^^^^^^ call to unsafe function
-   |
-   = note: consult the function's documentation for information on how to avoid undefined behavior
-note: an unsafe function restricts its caller, but its body is safe by default
-  --> src/interrupts/dispatch.rs:29:1
-   |
-29 | pub unsafe fn dispatch(irq: u8) {
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-   = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
-
-warning: unused variable: `frame`
-  --> src/interrupts/handlers.rs:15:45
-   |
-15 | ...rupt" fn debug_handler(frame: InterruptStackFrame) {
-   |                           ^^^^^ help: if this is intentional, prefix it with an underscore: `_frame`
-   |
-   = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
-
-warning: unused variable: `frame`
-  --> src/interrupts/handlers.rs:25:50
-   |
-25 | ... fn breakpoint_handler(frame: InterruptStackFrame) {
-   |                           ^^^^^ help: if this is intentional, prefix it with an underscore: `_frame`
-
-warning: unused variable: `frame`
-  --> src/interrupts/handlers.rs:30:48
-   |
-30 | ...t" fn overflow_handler(frame: InterruptStackFrame) {
-   |                           ^^^^^ help: if this is intentional, prefix it with an underscore: `_frame`
-
-warning[E0133]: call to unsafe function `pic8259::ChainedPics::notify_end_of_interrupt` is unsafe and requires unsafe block
-  --> src/interrupts/pic.rs:16:5
-   |
-16 |     PICS.lock().notify_end_of_interrupt(vector);
-   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ call to unsafe function
-   |
-   = note: consult the function's documentation for information on how to avoid undefined behavior
-note: an unsafe function restricts its caller, but its body is safe by default
-  --> src/interrupts/pic.rs:15:1
-   |
-15 | pub unsafe fn end_of_interrupt(vector: u8) {
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-   = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
-
-warning: variable does not need to be mutable
-  --> src/interrupts/pic.rs:21:9
-   |
-21 |     let mut pics = PICS.lock();
-   |         ----^^^^
-   |         |
-   |         help: remove this `mut`
-   |
-   = note: `#[warn(unused_mut)]` (part of `#[warn(unused)]`) on by default
-
-warning: unused variable: `pics`
-  --> src/interrupts/pic.rs:21:9
-   |
-21 |     let mut pics = PICS.lock();
-   |         ^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_pics`
-
-warning[E0133]: call to unsafe function `interrupts::pic::end_of_interrupt` is unsafe and requires unsafe block
-  --> src/interrupts/pic.rs:76:9
-   |
-76 |         end_of_interrupt(0x27);
-   |         ^^^^^^^^^^^^^^^^^^^^^^ call to unsafe function
-   |
-   = note: consult the function's documentation for information on how to avoid undefined behavior
-note: an unsafe function restricts its caller, but its body is safe by default
-  --> src/interrupts/pic.rs:73:1
-   |
-73 | pub unsafe fn eoi_if_not_spurious_master() {
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-   = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
-
-warning[E0133]: call to unsafe function `interrupts::pic::end_of_interrupt` is unsafe and requires unsafe block
-  --> src/interrupts/pic.rs:84:9
-   |
-84 |         end_of_interrupt(0x2F);
-   |         ^^^^^^^^^^^^^^^^^^^^^^ call to unsafe function
-   |
-   = note: consult the function's documentation for information on how to avoid undefined behavior
-note: an unsafe function restricts its caller, but its body is safe by default
-  --> src/interrupts/pic.rs:81:1
-   |
-81 | pub unsafe fn eoi_if_not_spurious_slave() {
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-   = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
-
-warning[E0133]: call to unsafe function `interrupts::pic::end_of_interrupt` is unsafe and requires unsafe block
-  --> src/interrupts/pic.rs:87:9
-   |
-87 |         end_of_interrupt(0x20); // master EOI only
-   |         ^^^^^^^^^^^^^^^^^^^^^^ call to unsafe function
-   |
-   = note: consult the function's documentation for information on how to avoid undefined behavior
-   = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
-
-warning[E0133]: use of mutable static is unsafe and requires unsafe block
-   --> src/memory/pmm.rs:128:5
-    |
-128 |     TOTAL_FREE_PAGES += 1;
-    |     ^^^^^^^^^^^^^^^^ use of mutable static
-    |
-    = note: mutable statics can be mutated by multiple threads: aliasing violations or data races will cause undefined behavior
-note: an unsafe function restricts its caller, but its body is safe by default
-   --> src/memory/pmm.rs:124:1
-    |
-124 | pub unsafe fn free_page(phys_addr: u64) {
-    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-    = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/unsafe-op-in-unsafe-fn.html>
-
-warning: unused variable: `info`
- --> src/panic.rs:4:10
-  |
-4 | fn panic(info: &PanicInfo) -> ! {
-  |          ^^^^ help: if this is intentional, prefix it with an underscore: `_info`
-
 warning: static `APIC_BASE_VADDR` is never used
  --> src/interrupts/apic.rs:3:8
   |
@@ -311,7 +35,7 @@ warning: associated items `new`, `read`, `write`, `init`, `end_of_interrupt`, an
    |
 22 | impl LocalApic {
    | -------------- associated items in this implementation
-23 |     /// Safety: base must be a valid, uncached virtual mapping...
+23 |     /// Safety: base must be a valid, uncached virtual mapping of the LAPIC MMIO region.
 24 |     pub unsafe fn new(base_vaddr: u64) -> Self {
    |                   ^^^
 ...
@@ -331,9 +55,9 @@ warning: associated items `new`, `read`, `write`, `init`, `end_of_interrupt`, an
    |                   ^^^^^^^^
 
 warning: function `disable_pic` is never used
-  --> src/interrupts/apic.rs:63:15
+  --> src/interrupts/apic.rs:65:15
    |
-63 | pub unsafe fn disable_pic() {
+65 | pub unsafe fn disable_pic() {
    |               ^^^^^^^^^^^
 
 warning: function `register` is never used
@@ -367,15 +91,15 @@ warning: function `read_imr` is never used
    |        ^^^^^^^^
 
 warning: function `count` is never used
-  --> src/interrupts/stats.rs:14:8
+  --> src/interrupts/stats.rs:13:8
    |
-14 | pub fn count(vector: u8) -> u64 {
+13 | pub fn count(vector: u8) -> u64 {
    |        ^^^^^
 
 warning: function `reset_all` is never used
-  --> src/interrupts/stats.rs:31:15
+  --> src/interrupts/stats.rs:18:15
    |
-31 | pub unsafe fn reset_all() {
+18 | pub unsafe fn reset_all() {
    |               ^^^^^^^^^
 
 warning: constant `APIC_SPURIOUS` is never used
@@ -441,6 +165,89 @@ warning: function `free_pages` is never used
 136 | pub fn free_pages() -> u64 {
     |        ^^^^^^^^^^
 
-For more information about this error, try `rustc --explain E0133`.
-warning: `my-kernel` (bin "kernel") generated 48 warnings (run `cargo fix --bin "kernel" -p my-kernel` to apply 17 suggestions)
-    Finished `dev` profile [optimized + debuginfo] target(s) in 6.91s
+warning: enum `QemuExitCode` is never used
+  --> src/testing.rs:10:10
+   |
+10 | pub enum QemuExitCode {
+   |          ^^^^^^^^^^^^
+
+warning: function `exit_qemu` is never used
+  --> src/testing.rs:15:8
+   |
+15 | pub fn exit_qemu(code: QemuExitCode) -> ! {
+   |        ^^^^^^^^^
+
+warning: trait `Testable` is never used
+  --> src/testing.rs:25:11
+   |
+25 | pub trait Testable {
+   |           ^^^^^^^^
+
+warning: struct `ColorCode` is never constructed
+  --> src/vga_buffer.rs:37:8
+   |
+37 | struct ColorCode(u8);
+   |        ^^^^^^^^^
+
+warning: associated function `new` is never used
+  --> src/vga_buffer.rs:40:8
+   |
+39 | impl ColorCode {
+   | -------------- associated function in this implementation
+40 |     fn new(foreground: Color, background: Color) -> ColorCode {
+   |        ^^^
+
+warning: struct `ScreenChar` is never constructed
+  --> src/vga_buffer.rs:47:8
+   |
+47 | struct ScreenChar {
+   |        ^^^^^^^^^^
+
+warning: constant `BUFFER_HEIGHT` is never used
+  --> src/vga_buffer.rs:52:7
+   |
+52 | const BUFFER_HEIGHT: usize = 25;
+   |       ^^^^^^^^^^^^^
+
+warning: constant `BUFFER_WIDTH` is never used
+  --> src/vga_buffer.rs:53:7
+   |
+53 | const BUFFER_WIDTH: usize = 80;
+   |       ^^^^^^^^^^^^
+
+warning: struct `Buffer` is never constructed
+  --> src/vga_buffer.rs:56:8
+   |
+56 | struct Buffer {
+   |        ^^^^^^
+
+warning: struct `Writer` is never constructed
+  --> src/vga_buffer.rs:62:12
+   |
+62 | pub struct Writer {
+   |            ^^^^^^
+
+warning: methods `write_byte`, `new_line`, and `clear_row` are never used
+   --> src/vga_buffer.rs:69:12
+    |
+ 68 | impl Writer {
+    | ----------- methods in this implementation
+ 69 |     pub fn write_byte(&mut self, byte: u8){
+    |            ^^^^^^^^^^
+...
+ 90 |     fn new_line(&mut self) {
+    |        ^^^^^^^^
+...
+101 |     fn clear_row(&mut self, row: usize) {
+    |        ^^^^^^^^^
+
+warning: method `write_string` is never used
+   --> src/vga_buffer.rs:113:12
+    |
+112 | impl Writer {
+    | ----------- method in this implementation
+113 |     pub fn write_string(&mut self, s: &str) {
+    |            ^^^^^^^^^^^^
+
+warning: `my-kernel` (bin "kernel") generated 35 warnings
+    Finished `dev` profile [optimized + debuginfo] target(s) in 0.33s
