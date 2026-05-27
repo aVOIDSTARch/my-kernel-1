@@ -4,6 +4,7 @@
 #![feature(custom_test_frameworks)]
 #![test_runner(crate::testing::test_runner)]
 #![reexport_test_harness_main = "test_main"]
+extern crate alloc;
 
 mod gdt;
 mod interrupts;
@@ -110,16 +111,16 @@ pub extern "C" fn kernel_main() -> ! {
     interrupts::init();
     println!("idt: ok");
 
-    memory::pmm::init(
+    memory::heap::init(
         memory_map.entries(),
         kernel_phys_start,
         kernel_phys_end,
         hhdm_offset,
     );
-    println!("pmm: ok");
+    println!("heap: ok");
 
-    memory::pmm::reclaim_bootloader_memory(memory_map.entries());
-    println!("pmm: bootloader memory reclaimed");
+    memory::vmm::init(hhdm_offset);
+    println!("vmm: ok");
 
     x86_64::instructions::interrupts::enable();
     println!("interrupts: enabled");

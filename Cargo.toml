@@ -8,6 +8,9 @@ name = "kernel"
 path = "src/main.rs"
 
 [dependencies]
+abalone   = { path = "abalone" }
+bitwise   = { path = "bitwise" }
+mantle    = { path = "mantle" }
 limine    = "0.6.3"
 x86_64    = "0.15"
 pic8259   = "0.10"
