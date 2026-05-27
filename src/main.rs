@@ -5,6 +5,7 @@
 #![test_runner(crate::testing::test_runner)]
 #![reexport_test_harness_main = "test_main"]
 
+mod framebuffer;
 mod gdt;
 mod interrupts;
 mod memory;
@@ -13,7 +14,7 @@ mod serial;
 mod testing;
 mod vga_buffer;
 
-use limine::request::{ExecutableAddressRequest, HhdmRequest, MemmapRequest};
+use limine::request::{ExecutableAddressRequest, FramebufferRequest, HhdmRequest, MemmapRequest};
 use limine::{BaseRevision, RequestsEndMarker, RequestsStartMarker};
 
 // ── Limine Protocol Anchors ───────────────────────────────────────────────
@@ -43,6 +44,10 @@ static MEMORY_MAP_REQUEST: MemmapRequest = MemmapRequest::new();
 #[used]
 #[unsafe(link_section = ".limine_requests")]
 static KERNEL_ADDRESS_REQUEST: ExecutableAddressRequest = ExecutableAddressRequest::new();
+
+#[used]
+#[unsafe(link_section = ".limine_requests")]
+static FRAMEBUFFER_REQUEST: FramebufferRequest = FramebufferRequest::new();
 
 #[used]
 #[unsafe(link_section = ".limine_requests_end")]
@@ -91,8 +96,12 @@ pub extern "C" fn kernel_main() -> ! {
 
     serial_println!("[kernel] hhdm={:#x}", hhdm_offset);
 
-    // VGA buffer is at phys 0xb8000; only safe via HHDM under Limine v7+.
-    vga_buffer::init(hhdm_offset);
+    if let Some(fb_resp) = FRAMEBUFFER_REQUEST.response() {
+        if let Some(fb) = fb_resp.framebuffers().first() {
+            framebuffer::init(*fb);
+        }
+    }
+
     println!("my-kernel booting...");
     println!("kernel: phys {:#x}..{:#x}  hhdm +{:#x}",
         kernel_phys_start, kernel_phys_end, hhdm_offset);
