@@ -5,14 +5,12 @@
 #![test_runner(crate::testing::test_runner)]
 #![reexport_test_harness_main = "test_main"]
 
-mod framebuffer;
 mod gdt;
 mod interrupts;
 mod memory;
 mod panic;
-mod serial;
 mod testing;
-mod vga_buffer;
+mod writers;
 
 use limine::request::{ExecutableAddressRequest, FramebufferRequest, HhdmRequest, MemmapRequest};
 use limine::{BaseRevision, RequestsEndMarker, RequestsStartMarker};
@@ -98,7 +96,7 @@ pub extern "C" fn kernel_main() -> ! {
 
     if let Some(fb_resp) = FRAMEBUFFER_REQUEST.response() {
         if let Some(fb) = fb_resp.framebuffers().first() {
-            framebuffer::init(*fb);
+            writers::framebuffer::init(*fb);
         }
     }
 

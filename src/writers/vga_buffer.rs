@@ -151,7 +151,7 @@ lazy_static! {
 // Print macros using our custom VGA buffer writer
 #[macro_export]
 macro_rules! print {
-    ($($arg:tt)*) => ($crate::vga_buffer::_print(format_args!($($arg)*)));
+    ($($arg:tt)*) => ($crate::writers::vga_buffer::_print(format_args!($($arg)*)));
 }
 
 #[macro_export]
@@ -162,5 +162,5 @@ macro_rules! println {
 
 #[doc(hidden)]
 pub fn _print(args: fmt::Arguments) {
-    crate::framebuffer::_print(args);
+    crate::writers::framebuffer::_print(args);
 }
