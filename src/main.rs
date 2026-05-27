@@ -49,9 +49,7 @@ static KERNEL_ADDRESS_REQUEST: ExecutableAddressRequest = ExecutableAddressReque
 #[unsafe(no_mangle)]
 pub extern "C" fn kernel_main() -> ! {
     serial_println!("[kernel] booting...");
-
-    // ── Step 1: Consume all Limine responses immediately.
-    // After GDT/page table switch, Limine's mappings may be gone.
+    println!("my-kernel booting...");
 
     assert!(
         BASE_REVISION.is_supported(),
@@ -73,7 +71,6 @@ pub extern "C" fn kernel_main() -> ! {
 
     let kernel_phys_start = kernel_addr.physical_base;
 
-    // Derive kernel physical end from linker-exported symbols.
     unsafe extern "C" {
         static __kernel_start: u8;
         static __kernel_end: u8;
@@ -84,40 +81,33 @@ pub extern "C" fn kernel_main() -> ! {
     };
     let kernel_phys_end = kernel_phys_start + kernel_size;
 
-    // ── Step 2: Load our GDT and TSS.
-    // Limine's GDT is now discarded. All segment registers and the TSS
-    // point into our static structures.
+    println!("kernel: phys {:#x}..{:#x}  hhdm +{:#x}",
+        kernel_phys_start, kernel_phys_end, hhdm_offset);
+
     gdt::init();
+    println!("gdt: ok");
 
-    // ── Step 3: Load IDT and initialise PIC.
-    // The PIC is programmed with vector offsets 0x20/0x28 and all lines
-    // are unmasked. Interrupts are still disabled — IF is still clear.
     interrupts::init();
+    println!("idt: ok");
 
-    // ── Step 4: Initialise physical memory manager.
-    // Only USABLE pages enter the free pool at this stage.
-    // BOOTLOADER_RECLAIMABLE pages are still in use by Limine's responses.
-    // let entries: alloc_entries_vec(memory_map.entries());
-    // NOTE: if no alloc available, iterate directly:
     memory::pmm::init(
         memory_map.entries(),
         kernel_phys_start,
         kernel_phys_end,
         hhdm_offset,
     );
+    println!("pmm: ok");
 
-    // ── Step 5: Reclaim bootloader memory.
-    // We have copied everything we need out of Limine's response structures.
     memory::pmm::reclaim_bootloader_memory(memory_map.entries());
+    println!("pmm: bootloader memory reclaimed");
 
-    // ── Step 6: Enable interrupts.
-    // The PIC will now begin delivering timer ticks and other IRQs.
     x86_64::instructions::interrupts::enable();
+    println!("interrupts: enabled");
 
     #[cfg(test)]
     test_main();
 
-    // ── Kernel is operational. Halt loop.
+    println!("kernel ready.");
     loop {
         x86_64::instructions::hlt();
     }

@@ -16,14 +16,7 @@ iso: $(KERNEL)
 	   $(LIMINE)/limine-bios-cd.bin \
 	   $(LIMINE)/limine-uefi-cd.bin \
 	   iso_root/boot/limine/
-	cat > iso_root/boot/limine/limine.conf << 'EOF'
-	TIMEOUT=0
-	VERBOSE=yes
-
-	/My Kernel
-	    PROTOCOL=limine
-	    KERNEL_PATH=boot:///boot/kernel.elf
-	EOF
+	printf 'timeout: 0\nverbose: yes\n\n/My Kernel\n    protocol: limine\n    path: boot():/boot/kernel.elf\n    kaslr: no\n' > iso_root/boot/limine/limine.conf
 	xorriso -as mkisofs \
 		-b boot/limine/limine-bios-cd.bin \
 		-no-emul-boot -boot-load-size 4 -boot-info-table \

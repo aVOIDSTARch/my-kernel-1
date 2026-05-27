@@ -16,12 +16,14 @@ cp "$LIMINE/limine-bios.sys" \
    "$ISO_ROOT/boot/limine/"
 
 cat > "$ISO_ROOT/boot/limine/limine.conf" << 'EOF'
-TIMEOUT=0
-VERBOSE=no
+timeout: 0
+verbose: no
+graphics: no
 
 /My Kernel
-    PROTOCOL=limine
-    KERNEL_PATH=boot:///boot/kernel.elf
+    protocol: limine
+    path: boot():/boot/kernel.elf
+    kaslr: no
 EOF
 
 xorriso -as mkisofs \
