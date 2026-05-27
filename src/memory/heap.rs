@@ -1,4 +1,5 @@
 use abalone::{buddy::BUDDY, tlsf::TlsfAllocator};
+use bitwise::align::{align_down, align_up};
 use limine::memmap::{Entry, MEMMAP_BOOTLOADER_RECLAIMABLE, MEMMAP_USABLE};
 
 #[global_allocator]
@@ -53,14 +54,4 @@ pub fn init(
 
     // Carve 4 MiB (2^10 pages) from the buddy to seed the TLSF sub-page heap.
     unsafe { HEAP.init(10); }
-}
-
-#[inline]
-fn align_up(addr: u64, align: u64) -> u64 {
-    (addr + align - 1) & !(align - 1)
-}
-
-#[inline]
-fn align_down(addr: u64, align: u64) -> u64 {
-    addr & !(align - 1)
 }
