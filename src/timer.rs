@@ -1,4 +1,4 @@
-// v0.0.4
+// v0.0.5
 use core::sync::atomic::{AtomicU64, Ordering};
 
 /// PIT oscillator frequency in Hz (standard 14.318 MHz / 12).
@@ -88,6 +88,7 @@ mod tests {
             x86_64::instructions::interrupts::are_enabled(),
             "interrupts must be enabled for timer test"
         );
+
         let before = uptime_ms();
         sleep_ms(5);
         assert!(uptime_ms() >= before + 5, "sleep_ms(5) did not wait long enough");
