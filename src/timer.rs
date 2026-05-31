@@ -1,4 +1,4 @@
-// v0.0.2
+// v0.0.3
 use core::sync::atomic::{AtomicU64, Ordering};
 
 /// PIT oscillator frequency in Hz (standard 14.318 MHz / 12).
@@ -48,5 +48,43 @@ pub fn sleep_ms(ms: u64) {
     let end = uptime_ms().saturating_add(ms);
     while uptime_ms() < end {
         core::hint::spin_loop();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test_case]
+    fn tick_increases_uptime_ms() {
+        let before = uptime_ms();
+        tick();
+        // Timer ISR may also have fired concurrently; after >= before + 1 always holds
+        // because tick() adds exactly 1 and the ISR only adds more.
+        assert!(uptime_ms() >= before + 1, "tick() must increase uptime by at least 1");
+    }
+
+    #[test_case]
+    fn uptime_ms_is_non_decreasing() {
+        let a = uptime_ms();
+        let b = uptime_ms();
+        let c = uptime_ms();
+        assert!(b >= a, "uptime went backwards between reads");
+        assert!(c >= b, "uptime went backwards between reads");
+    }
+
+    #[test_case]
+    fn sleep_ms_zero_returns_without_spinning() {
+        let before = uptime_ms();
+        sleep_ms(0);
+        // Must complete; after >= before (timer only moves forward).
+        assert!(uptime_ms() >= before);
+    }
+
+    #[test_case]
+    fn sleep_ms_advances_uptime_by_at_least_requested_duration() {
+        let before = uptime_ms();
+        sleep_ms(5);
+        assert!(uptime_ms() >= before + 5, "sleep_ms(5) did not wait long enough");
     }
 }

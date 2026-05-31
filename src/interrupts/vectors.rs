@@ -1,4 +1,4 @@
-// v0.0.2
+// v0.0.3
 // Every vector number lives here. No other file uses raw numeric literals
 // for vectors — they import from this module.
 
@@ -53,5 +53,50 @@ impl InterruptVector {
 
     pub fn is_spurious(self) -> bool {
         matches!(self, Self::SpuriousMaster | Self::AtaSecondary)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test_case]
+    fn pic_irq_offsets_match_8259_remapping() {
+        // PIC1 remapped to 0x20, PIC2 to 0x28.
+        assert_eq!(PIC_IRQ_TIMER,           0x20);
+        assert_eq!(PIC_IRQ_KEYBOARD,        0x21);
+        assert_eq!(PIC_IRQ_SPURIOUS_MASTER, 0x27);
+        assert_eq!(PIC_IRQ_RTC,             0x28);
+        assert_eq!(PIC_IRQ_MOUSE,           0x2C);
+        assert_eq!(PIC_IRQ_ATA_PRIMARY,     0x2E);
+        assert_eq!(PIC_IRQ_ATA_SECONDARY,   0x2F);
+    }
+
+    #[test_case]
+    fn interrupt_vector_as_u8_matches_constant() {
+        assert_eq!(InterruptVector::Timer.as_u8(),          PIC_IRQ_TIMER);
+        assert_eq!(InterruptVector::Keyboard.as_u8(),       PIC_IRQ_KEYBOARD);
+        assert_eq!(InterruptVector::SpuriousMaster.as_u8(), PIC_IRQ_SPURIOUS_MASTER);
+        assert_eq!(InterruptVector::Rtc.as_u8(),            PIC_IRQ_RTC);
+        assert_eq!(InterruptVector::Mouse.as_u8(),          PIC_IRQ_MOUSE);
+        assert_eq!(InterruptVector::AtaPrimary.as_u8(),     PIC_IRQ_ATA_PRIMARY);
+        assert_eq!(InterruptVector::AtaSecondary.as_u8(),   PIC_IRQ_ATA_SECONDARY);
+    }
+
+    #[test_case]
+    fn as_usize_matches_as_u8_cast() {
+        assert_eq!(InterruptVector::Timer.as_usize(), PIC_IRQ_TIMER as usize);
+        assert_eq!(InterruptVector::Rtc.as_usize(),   PIC_IRQ_RTC   as usize);
+    }
+
+    #[test_case]
+    fn is_spurious_only_for_spurious_vectors() {
+        assert!( InterruptVector::SpuriousMaster.is_spurious());
+        assert!( InterruptVector::AtaSecondary.is_spurious());
+        assert!(!InterruptVector::Timer.is_spurious());
+        assert!(!InterruptVector::Keyboard.is_spurious());
+        assert!(!InterruptVector::Rtc.is_spurious());
+        assert!(!InterruptVector::Mouse.is_spurious());
+        assert!(!InterruptVector::AtaPrimary.is_spurious());
     }
 }

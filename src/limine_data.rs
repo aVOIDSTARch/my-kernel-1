@@ -1,4 +1,4 @@
-// v0.0.10
+// v0.0.11
 //! Limine boot protocol data harvesting.
 //!
 //! This module is the **sole** point of contact between the kernel and Limine.
@@ -415,5 +415,78 @@ impl LimineData {
                 buddy.add_region((hhdm_offset + base) as usize, page_count);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn usable(base: u64, length: u64) -> MemoryRegion {
+        MemoryRegion { base, length, region_type: MemoryRegionType::Usable }
+    }
+
+    // ── MemoryRegion ──────────────────────────────────────────────────────────
+
+    #[test_case]
+    fn end_is_base_plus_length() {
+        assert_eq!(usable(0x1000, 0x3000).end(), 0x4000);
+        assert_eq!(usable(0, 0).end(), 0);
+    }
+
+    #[test_case]
+    fn aligned_base_rounds_up_to_page_boundary() {
+        assert_eq!(usable(0x1001, 0x5000).aligned_base(), 0x2000);
+        assert_eq!(usable(0x0FFF, 0x5000).aligned_base(), 0x1000);
+    }
+
+    #[test_case]
+    fn aligned_base_of_page_aligned_region_is_unchanged() {
+        assert_eq!(usable(0x2000, 0x1000).aligned_base(), 0x2000);
+        assert_eq!(usable(0,      0x1000).aligned_base(), 0);
+    }
+
+    #[test_case]
+    fn aligned_end_rounds_down_to_page_boundary() {
+        // base=0x1000, length=0x1FFF -> end=0x2FFF, aligned_end=0x2000
+        assert_eq!(usable(0x1000, 0x1FFF).aligned_end(), 0x2000);
+    }
+
+    #[test_case]
+    fn aligned_end_of_page_aligned_region_is_unchanged() {
+        assert_eq!(usable(0x1000, 0x2000).aligned_end(), 0x3000);
+    }
+
+    #[test_case]
+    fn has_pages_true_when_at_least_one_full_page_fits() {
+        assert!(usable(0x1000, 0x1000).has_pages()); // exactly one page
+        assert!(usable(0x1000, 0x2000).has_pages()); // two pages
+    }
+
+    #[test_case]
+    fn has_pages_false_when_region_has_no_full_page() {
+        // aligned_base=0x2000, end=0x2000 -> no page
+        assert!(!usable(0x1001, 0x0FFF).has_pages());
+        assert!(!usable(0x1000, 0).has_pages());
+    }
+
+    // ── MemoryRegionType ──────────────────────────────────────────────────────
+
+    #[test_case]
+    fn only_usable_is_immediately_usable() {
+        assert!( MemoryRegionType::Usable.is_immediately_usable());
+        assert!(!MemoryRegionType::BootloaderReclaimable.is_immediately_usable());
+        assert!(!MemoryRegionType::AcpiReclaimable.is_immediately_usable());
+        assert!(!MemoryRegionType::Reserved.is_immediately_usable());
+        assert!(!MemoryRegionType::Framebuffer.is_immediately_usable());
+    }
+
+    #[test_case]
+    fn reclaimable_types_are_reclaimable() {
+        assert!( MemoryRegionType::BootloaderReclaimable.is_reclaimable());
+        assert!( MemoryRegionType::AcpiReclaimable.is_reclaimable());
+        assert!(!MemoryRegionType::Usable.is_reclaimable());
+        assert!(!MemoryRegionType::Reserved.is_reclaimable());
+        assert!(!MemoryRegionType::ExecutableAndModules.is_reclaimable());
     }
 }

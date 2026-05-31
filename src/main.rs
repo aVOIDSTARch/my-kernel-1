@@ -1,4 +1,4 @@
-// v0.0.5
+// v0.0.6
 #![no_std]
 #![no_main]
 #![feature(abi_x86_interrupt)]
@@ -13,6 +13,8 @@ mod limine_data;
 mod memory;
 mod panic;
 mod testing;
+#[cfg(test)]
+mod tests;
 mod timer;
 mod writers;
 
