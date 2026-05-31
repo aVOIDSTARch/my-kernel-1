@@ -1,4 +1,4 @@
-// v0.0.9
+// v0.0.10
 //! Limine boot protocol data harvesting.
 //!
 //! This module is the **sole** point of contact between the kernel and Limine.
@@ -378,23 +378,33 @@ impl LimineData {
     /// design of this module — no Limine pointer escapes `harvest`.
     pub unsafe fn release(self) {
         let hhdm_offset = self.hhdm_offset;
-        let mut buddy   = BUDDY.lock();
+
+        // Read the current stack pointer. Any reclaimable page at or below
+        // this address is live stack memory and must not be freed.
+        let current_sp: u64;
+        unsafe {
+            core::arch::asm!("mov {}, rsp", out(reg) current_sp, options(nostack, nomem));
+        }
+        // Convert SP to physical; round down to page boundary.
+        let sp_phys_page = (current_sp - hhdm_offset) & !0xFFF;
+
+        let mut buddy = BUDDY.lock();
 
         for region in self.reclaimable_regions() {
             let base = region.aligned_base();
             let end  = region.aligned_end();
             if base >= end { continue; }
 
-            let virt_base = (hhdm_offset + base) as usize;
+            // Skip the sub-1MiB region. It precedes the buddy's base address
+            // (seeded from Usable regions starting at 0x53000) and contains
+            // real-mode IVT, BDA, EBDA, and ROM shadow — none of which are
+            // safe general-purpose heap memory on x86.
+            if base < 0x100000 {
+                continue;
+            }
 
-            // The low BootloaderReclaimable region (physical 0x1000-0x53000)
-            // contains Limine's active page tables. Overwriting it with
-            // FreeBlock headers would corrupt the page table walk, causing a
-            // fault on the next write through HHDM. Skip any region that falls
-            // below the buddy's base; those pages can only be reclaimed after
-            // a new PML4 built from Usable pages has been installed and CR3
-            // has been switched.
-            if virt_base < buddy.base() {
+            // Skip any region containing the current stack pointer (see prior fix).
+            if sp_phys_page >= base && sp_phys_page < end {
                 continue;
             }
 
@@ -402,11 +412,8 @@ impl LimineData {
             if page_count == 0 { continue; }
 
             unsafe {
-                buddy.add_region(virt_base, page_count);
+                buddy.add_region((hhdm_offset + base) as usize, page_count);
             }
         }
-        // `self` drops here. LimineData is stack-allocated with no heap
-        // pointers, so drop is a no-op. The physical pages are now free.
     }
 }
-
