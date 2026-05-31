@@ -1,7 +1,8 @@
-// v0.0.3
+// v0.0.4
 // Kernel-level tests for mantle and abalone types.
 // These run in QEMU via the kernel's custom test runner after full
 // kernel initialization (heap, VMM, and timer are all up).
+
 
 use mantle::prot::Protection;
 use mantle::table::PageTable;

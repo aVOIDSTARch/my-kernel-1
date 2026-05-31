@@ -24,6 +24,9 @@ volatile    = "0.2"
 panic = "abort"
 opt-level = 1          # 0 can produce stack frames too large for IST stacks
 
+[profile.test]
+panic = "abort"        # must match dev; mismatching causes build-std to emit two core crates
+
 [profile.release]
 panic = "abort"
 opt-level = 3
