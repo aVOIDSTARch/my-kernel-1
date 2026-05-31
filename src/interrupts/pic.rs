@@ -1,4 +1,4 @@
-// v0.0.2
+// v0.0.3
 use pic8259::ChainedPics;
 use spin::Mutex;
 
@@ -10,7 +10,15 @@ static PICS: Mutex<ChainedPics> = Mutex::new(unsafe {
 });
 
 pub fn init() {
-    unsafe { PICS.lock().initialize() };
+    unsafe {
+        PICS.lock().initialize();
+        // Unmask all IRQs explicitly. QEMU's post-reset IMR state is
+        // 0xFB/0xFF (all masked); pic8259::initialize() does not clear
+        // the masks, so without this IRQ0 (timer) never fires.
+        use x86_64::instructions::port::Port;
+        Port::<u8>::new(0x21).write(0x00); // master: unmask all
+        Port::<u8>::new(0xA1).write(0xFF); // slave:  keep all masked (unused)
+    }
 }
 
 pub unsafe fn end_of_interrupt(vector: u8) {

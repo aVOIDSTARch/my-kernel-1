@@ -46,7 +46,8 @@ qemu-system-x86_64 \
     -device isa-debug-exit,iobase=0xf4,iosize=0x04 \
     -display none \
     -no-reboot \
-    -no-shutdown
+    -no-shutdown || true
+    -action shutdown=poweroff
 QEMU_EXIT=$?
 
 if [ $QEMU_EXIT -eq 33 ]; then

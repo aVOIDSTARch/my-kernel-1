@@ -1,4 +1,4 @@
-// v0.0.2
+// v0.0.3
 use x86_64::instructions::port::Port;
 
 // ── QEMU exit device ──────────────────────────────────────────────────────
@@ -14,11 +14,17 @@ pub enum QemuExitCode {
 }
 
 pub fn exit_qemu(code: QemuExitCode) -> ! {
+    x86_64::instructions::interrupts::disable();
     unsafe {
         let mut port: Port<u32> = Port::new(0xf4);
         port.write(code as u32);
+        // Flush any write buffering — should not be needed for port I/O
+        // but makes intent explicit.
+        core::arch::asm!("out 0xf4, eax", in("eax") code as u32);
     }
-    loop {}
+    loop {
+        x86_64::instructions::hlt();
+    }
 }
 
 // ── Testable trait ────────────────────────────────────────────────────────

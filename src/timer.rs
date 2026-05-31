@@ -1,4 +1,4 @@
-// v0.0.5
+// v0.0.6
 use core::sync::atomic::{AtomicU64, Ordering};
 
 /// PIT oscillator frequency in Hz (standard 14.318 MHz / 12).
@@ -83,14 +83,29 @@ mod tests {
 
     #[test_case]
     fn sleep_ms_advances_uptime_by_at_least_requested_duration() {
-        // This test requires timer interrupts to be firing.
         assert!(
             x86_64::instructions::interrupts::are_enabled(),
-            "interrupts must be enabled for timer test"
+            "interrupts must be enabled"
         );
+
+        // Verify ticks are actually advancing before committing to sleep_ms.
+        // Wait at most 100 ms (100 ticks) for a single tick to arrive.
+        let probe_start = uptime_ms();
+        loop {
+            if uptime_ms() > probe_start { break; }
+            if uptime_ms() > probe_start + 100 {
+                panic!("timer ISR is not calling tick() — TICKS frozen at {}", probe_start);
+            }
+            core::hint::spin_loop();
+        }
 
         let before = uptime_ms();
         sleep_ms(5);
-        assert!(uptime_ms() >= before + 5, "sleep_ms(5) did not wait long enough");
+        let after = uptime_ms();
+        assert!(
+            after >= before + 5,
+            "sleep_ms(5) returned too early: before={} after={} elapsed={}",
+            before, after, after - before,
+        );
     }
 }
