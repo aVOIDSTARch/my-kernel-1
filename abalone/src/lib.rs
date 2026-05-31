@@ -25,7 +25,7 @@ pub mod linked_list;
 // ── Constants and types (formerly from the `framework` crate) ─────────────────
 
 pub const PAGE_SIZE: usize = 4096;
-pub const BUDDY_MAX_ORDER: usize = 20;
+pub const BUDDY_MAX_ORDER: usize = 17; // 2^17 pages × 4 KiB = 512 MiB; keeps BSS ~136 KiB
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct AllocStats {

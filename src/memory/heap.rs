@@ -19,6 +19,10 @@ pub fn init(
     hhdm_offset: u64,
 ) {
     {
+        // Align raw memory regions to page boundaries and add them to the buddy allocator,
+        let kernel_phys_start = align_down(kernel_phys_start, 4096);
+        let kernel_phys_end   = align_up(kernel_phys_end, 4096);
+
         let mut buddy = BUDDY.lock();
 
         for entry in entries {
