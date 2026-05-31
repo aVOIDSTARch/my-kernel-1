@@ -1,4 +1,4 @@
-// v0.0.2
+// v0.0.3
 //! Limine boot protocol data harvesting.
 //!
 //! This module is the **sole** point of contact between the kernel and Limine.
@@ -357,7 +357,7 @@ impl LimineData {
     /// buddy allocator, then consume `self`.
     ///
     /// Call this after:
-    /// - The heap (buddy + TLSF) is fully initialised.
+    /// - The heap (buddy + TLSF) is fully initialized.
     /// - The VMM is up and no longer depends on Limine's page tables.
     /// - All fields you still need have been copied out of `self`.
     ///
