@@ -1,4 +1,4 @@
-// v0.0.5
+// v0.0.6
 //! Limine boot protocol data harvesting.
 //!
 //! This module is the **sole** point of contact between the kernel and Limine.
@@ -21,6 +21,8 @@
 //! // All Limine data is now in `boot`. Release reclaimable pages:
 //! unsafe { boot.release() };
 //! ```
+
+#![allow(dead_code)]
 
 use core::sync::atomic::{AtomicBool, Ordering};
 
@@ -271,7 +273,7 @@ impl LimineData {
 
         for entry in memmap.entries() {
             if region_count >= MAX_REGIONS { break; }
-            let region_type = match entry.entry_type {
+            let region_type = match entry.type_ {
                 t if t == MEMMAP_USABLE                  => MemoryRegionType::Usable,
                 t if t == MEMMAP_BOOTLOADER_RECLAIMABLE  => MemoryRegionType::BootloaderReclaimable,
                 t if t == MEMMAP_ACPI_RECLAIMABLE        => MemoryRegionType::AcpiReclaimable,
@@ -293,21 +295,21 @@ impl LimineData {
         // ── Framebuffer ───────────────────────────────────────────────────
         let framebuffer = FRAMEBUFFER_REQUEST
             .response()
-            .and_then(|r| r.framebuffers().next())
+            .and_then(|r| r.framebuffers().first().copied())
             .map(|fb| {
-                let virt_addr = fb.addr() as u64;
+                let virt_addr = fb.address() as u64;
                 let phys_addr = virt_addr - hhdm_offset;
-                let byte_size = fb.height() as u64 * fb.pitch();
+                let byte_size = fb.height * fb.pitch;
                 FramebufferInfo {
                     virt_addr,
                     phys_addr,
-                    width:          fb.width(),
-                    height:         fb.height(),
-                    pitch:          fb.pitch() as u32,
-                    bits_per_pixel: fb.bpp(),
-                    r_shift:         fb.red_mask_shift(),
-                    g_shift:         fb.green_mask_shift(),
-                    b_shift:         fb.blue_mask_shift(),
+                    width:          fb.width as u32,
+                    height:         fb.height as u32,
+                    pitch:          fb.pitch as u32,
+                    bits_per_pixel: fb.bpp,
+                    r_shift:        fb.red_mask_shift,
+                    g_shift:        fb.green_mask_shift,
+                    b_shift:        fb.blue_mask_shift,
                     byte_size,
                 }
             });
@@ -317,7 +319,7 @@ impl LimineData {
         // so callers always receive a consistent physical address.
         let rsdp_phys = RSDP_REQUEST
             .response()
-            .map(|r| (r.address() as u64).saturating_sub(hhdm_offset));
+            .map(|r| (r.address as usize as u64).saturating_sub(hhdm_offset));
 
         // ── Bootloader info ───────────────────────────────────────────────
         let bootloader_info = BOOTLOADER_INFO_REQUEST
@@ -329,12 +331,12 @@ impl LimineData {
                     version:     [0u8; 64],
                     version_len: 0,
                 };
-                let name_bytes    = r.name().to_bytes();
+                let name_bytes    = r.name().as_bytes();
                 let name_len      = name_bytes.len().min(63);
                 info.name[..name_len].copy_from_slice(&name_bytes[..name_len]);
                 info.name_len     = name_len;
 
-                let version_bytes = r.version().to_bytes();
+                let version_bytes = r.version().as_bytes();
                 let version_len   = version_bytes.len().min(63);
                 info.version[..version_len].copy_from_slice(&version_bytes[..version_len]);
                 info.version_len  = version_len;
