@@ -47,7 +47,6 @@ qemu-system-x86_64 \
     -display none \
     -no-reboot \
     -no-shutdown || true
-    -action shutdown=poweroff
 QEMU_EXIT=$?
 
 if [ $QEMU_EXIT -eq 33 ]; then
