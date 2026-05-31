@@ -1,4 +1,4 @@
-// v0.0.2
+// v0.0.4
 //! Two-Level Segregated Fit allocator — O(1) worst-case alloc and dealloc.
 //!
 //! Backed by the buddy allocator. Registered as `#[global_allocator]` for the
@@ -11,8 +11,6 @@ use core::{
     ptr,
 };
 use spin::Mutex;
-use crate::PAGE_SIZE;
-use crate::buddy;
 
 // ── TLSF parameters ───────────────────────────────────────────────────────────
 
@@ -74,8 +72,6 @@ struct TlsfInner {
     fl_bitmap:  u32,
     sl_bitmap:  [u32; FL_INDEX_COUNT],
     free_lists: [[*mut BlockHeader; SL_COUNT]; FL_INDEX_COUNT],
-    pool_base:  *mut u8,
-    pool_size:  usize,
 }
 
 // SAFETY: protected by Mutex.
@@ -87,8 +83,6 @@ impl TlsfInner {
             fl_bitmap:  0,
             sl_bitmap:  [0u32; FL_INDEX_COUNT],
             free_lists: [[ptr::null_mut(); SL_COUNT]; FL_INDEX_COUNT],
-            pool_base:  ptr::null_mut(),
-            pool_size:  0,
         }
     }
 
@@ -220,9 +214,6 @@ impl TlsfInner {
             "pool too small"
         );
 
-        self.pool_base = mem;
-        self.pool_size = size;
-
         unsafe {
             let sentinel_addr = mem.add(size - core::mem::size_of::<BlockHeader>());
             let sentinel      = sentinel_addr as *mut BlockHeader;
@@ -260,14 +251,12 @@ impl TlsfAllocator {
         Self { inner: Mutex::new(TlsfInner::new()) }
     }
 
-    /// Carve a pool of `2^buddy_order` pages from the buddy and initialise TLSF.
+    /// Initialise TLSF from a caller-provided memory region.
     ///
     /// # Safety
-    /// Must be called exactly once, after the buddy is populated.
-    pub unsafe fn init(&self, buddy_order: usize) {
-        let size = PAGE_SIZE << buddy_order;
-        let mem  = buddy::alloc_pages(buddy_order)
-            .expect("TLSF init: buddy OOM — reduce buddy_order or add more regions");
+    /// `mem` must point to `size` bytes of writable memory that will not be
+    /// aliased or freed for the lifetime of this allocator.
+    pub unsafe fn init_from_ptr(&self, mem: *mut u8, size: usize) {
         unsafe { self.inner.lock().add_pool(mem, size); }
     }
 }

@@ -1,4 +1,4 @@
-// v0.0.2
+// v0.0.4
 //! Typed slab allocator backed by the buddy allocator.
 //!
 //! A `SlabCache<T>` holds a collection of slabs, where each slab is a single
@@ -43,6 +43,8 @@ struct SlabCacheInner<T> {
     objs_per_slab: usize,
     partial:       *mut SlabHeader,
     stats:         AllocStats,
+    alloc_page:    fn(usize) -> Option<*mut u8>,
+    dealloc_page:  unsafe fn(*mut u8, usize),
     _marker:       PhantomData<T>,
 }
 
@@ -74,6 +76,8 @@ impl<T> SlabCacheInner<T> {
                 dealloc_count: 0,
                 peak_bytes:    0,
             },
+            alloc_page:   buddy::alloc_pages,
+            dealloc_page: buddy::dealloc_pages,
             _marker: PhantomData,
         }
     }
@@ -130,7 +134,7 @@ impl<T> SlabCacheInner<T> {
                 self.link_partial(header as *mut SlabHeader);
             } else if header.is_empty() {
                 self.unlink_partial(header as *mut SlabHeader);
-                buddy::dealloc_pages(slab_base as *mut u8, self.slab_order);
+                (self.dealloc_page)(slab_base as *mut u8, self.slab_order);
                 self.stats.total_bytes -= slab_bytes as u64;
                 self.stats.free_bytes  -= slab_bytes as u64;
             }
@@ -145,7 +149,7 @@ impl<T> SlabCacheInner<T> {
         let slab_bytes = PAGE_SIZE << self.slab_order;
         let obj_size   = mem::size_of::<T>();
 
-        let raw       = buddy::alloc_pages(self.slab_order)?;
+        let raw       = (self.alloc_page)(self.slab_order)?;
         let slab_base = raw as usize;
 
         for i in 0..self.objs_per_slab {
@@ -214,7 +218,7 @@ impl<T: Send> SlabCache<T> {
         unsafe { self.inner.lock().dealloc(ptr); }
     }
 
-    pub fn stats(&self) -> AllocStats {
+    pub(crate) fn stats(&self) -> AllocStats {
         self.inner.lock().stats
     }
 }

@@ -1,4 +1,4 @@
-// v0.0.3
+// v0.0.5
 //! Binary buddy allocator for x86_64 bare-metal.
 //!
 //! Manages a contiguous address space (physical or virtual) as a binary buddy
@@ -86,18 +86,20 @@ impl BuddyAllocator {
     // Expose base address and total size for testing and diagnostics.
     pub fn base(&self) -> usize { self.base }
 
+    /// Establish the base address for the index space. Must be called before `add_region`.
+    pub fn set_base(&mut self, virt_base: usize) {
+        assert!(self.total_pages == 0, "set_base must be called before add_region");
+        assert!(virt_base % PAGE_SIZE == 0);
+        self.base = virt_base;
+    }
+
     /// Register a physical memory region as a virtual address range under HHDM.
     ///
     /// # Safety
     /// `virt_base` must be page-aligned, point to genuinely free writable RAM
     /// mapped into the kernel address space, and not be aliased elsewhere.
     pub unsafe fn add_region(&mut self, virt_base: usize, page_count: usize) {
-        assert!(virt_base % PAGE_SIZE == 0, "region base must be page-aligned");
-        assert!(page_count > 0, "empty region");
-
-        if self.base == 0 {
-            self.base = virt_base;
-        }
+        assert!(self.base != 0, "call set_base before add_region");
         assert!(virt_base >= self.base, "region base precedes allocator base");
 
         let mut remaining    = page_count;
@@ -217,7 +219,7 @@ impl BuddyAllocator {
         self.bitmaps[order].toggle(page_idx >> (order + 1));
     }
 
-    pub fn stats(&self) -> AllocStats { self.stats }
+    pub(crate) fn stats(&self) -> AllocStats { self.stats }
 }
 
 // ── Global instance ───────────────────────────────────────────────────────────
@@ -260,6 +262,7 @@ mod tests {
     fn alloc_and_dealloc_single_page() {
         let mut buddy = BuddyAllocator::new();
         let base = test_base();
+        buddy.set_base(base);
         unsafe {
             buddy.add_region(base, 4);
             let ptr = buddy.alloc_pages(0).expect("order-0 alloc failed");
@@ -275,6 +278,7 @@ mod tests {
     fn alloc_order1_spans_two_pages() {
         let mut buddy = BuddyAllocator::new();
         let base = test_base();
+        buddy.set_base(base);
         unsafe {
             buddy.add_region(base, 4);
             let ptr = buddy.alloc_pages(1).expect("order-1 alloc failed");
@@ -288,6 +292,7 @@ mod tests {
     fn two_order0_allocs_do_not_overlap() {
         let mut buddy = BuddyAllocator::new();
         let base = test_base();
+        buddy.set_base(base);
         unsafe {
             buddy.add_region(base, 4);
             let p0 = buddy.alloc_pages(0).expect("first order-0 alloc");
@@ -304,6 +309,7 @@ mod tests {
     fn coalescing_restores_higher_order_block() {
         let mut buddy = BuddyAllocator::new();
         let base = test_base();
+        buddy.set_base(base);
         unsafe {
             buddy.add_region(base, 4);
             // Alloc two adjacent order-1 blocks, consuming all 4 pages.
@@ -325,6 +331,7 @@ mod tests {
     fn oom_returns_none() {
         let mut buddy = BuddyAllocator::new();
         let base = test_base();
+        buddy.set_base(base);
         unsafe {
             buddy.add_region(base, 1); // exactly one page
             let _p = buddy.alloc_pages(0).expect("first alloc must succeed");
@@ -336,6 +343,7 @@ mod tests {
     fn stats_track_used_and_free_bytes() {
         let mut buddy = BuddyAllocator::new();
         let base = test_base();
+        buddy.set_base(base);
         unsafe {
             buddy.add_region(base, 4);
             let initial_free = buddy.stats().free_bytes;
@@ -357,6 +365,7 @@ mod tests {
     fn peak_bytes_tracks_high_water_mark() {
         let mut buddy = BuddyAllocator::new();
         let base = test_base();
+        buddy.set_base(base);
         unsafe {
             buddy.add_region(base, 4);
             let p0 = buddy.alloc_pages(0).expect("alloc p0");

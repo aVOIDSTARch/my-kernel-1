@@ -1,4 +1,4 @@
-// v0.0.4
+// v0.0.6
 use abalone::{buddy::BUDDY, tlsf::TlsfAllocator};
 use bitwise::align::{align_down, align_up};
 
@@ -24,33 +24,39 @@ pub fn init(
     kernel_phys_end:   u64,
     hhdm_offset:       u64,
 ) {
-    // Defensive alignment — limine_data already guarantees page alignment on
-    // usable entries, but correctness should not depend on call-site discipline.
     let kernel_phys_start = align_down(kernel_phys_start, 4096);
     let kernel_phys_end   = align_up(kernel_phys_end, 4096);
 
+    // Pass 1: find the minimum virtual address across immediately-usable regions.
+    // Reclaimable regions are excluded: the low-address BootloaderReclaimable
+    // pages (physical 0x1000-0x53000) contain Limine's active page tables and
+    // cannot be written until a new PML4 built from Usable pages is installed.
+    let min_virt = regions
+        .iter()
+        .filter(|r| r.region_type.is_immediately_usable())
+        .map(|r| hhdm_offset + r.aligned_base())
+        .min()
+        .expect("no usable memory") as usize;
+
     {
         let mut buddy = BUDDY.lock();
+        buddy.set_base(min_virt);
 
+        // Pass 2: add all immediately-usable regions, punching out the kernel range.
         for region in regions {
-            if region.region_type != MemoryRegionType::Usable
-                // Skip usable regions that are entirely consumed by the kernel.
-                {
-                    serial_println!("[memmap] skipping {:#x}+{:#x} {:?}",
-                        region.base, region.length, region.region_type);
-                    continue;
-                }
-            else {
-                serial_println!("[memmap] using {:#x}+{:#x} {:?}",
+            if region.region_type != MemoryRegionType::Usable {
+                serial_println!("[memmap] skipping {:#x}+{:#x} {:?}",
                     region.base, region.length, region.region_type);
+                continue;
             }
+
+            serial_println!("[memmap] using {:#x}+{:#x} {:?}",
+                region.base, region.length, region.region_type);
 
             let base = region.aligned_base();
             let end  = region.aligned_end();
             if base >= end { continue; }
 
-            // Add in up to two parts, punching out the kernel range.
-            //
             // Case 1: region extends below the kernel.
             if base < kernel_phys_start {
                 let part_end   = end.min(kernel_phys_start);
@@ -75,5 +81,9 @@ pub fn init(
     }
 
     // Carve 4 MiB (2^10 pages) from the buddy to seed the TLSF sub-page heap.
-    unsafe { HEAP.init(10); }
+    let mem = {
+        let mut b = BUDDY.lock();
+        b.alloc_pages(10).expect("TLSF init: buddy OOM")
+    };
+    unsafe { HEAP.init_from_ptr(mem, 4096 << 10); }
 }

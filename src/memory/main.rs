@@ -1,4 +1,4 @@
-// v0.1.1
+// v0.1.2
 #![no_std]
 #![no_main]
 #![feature(abi_x86_interrupt)]
@@ -59,6 +59,18 @@ pub extern "C" fn kernel_main() -> ! {
     serial_println!("[kernel] idt ok");
 
     // ── Step 3: heap (buddy seeded from usable regions, TLSF on top) ─────
+    // Compute minimum virtual address across all usable + reclaimable regions.
+    let min_virt = boot.regions
+        .iter()
+        .filter(|r| r.region_type.is_immediately_usable() || r.region_type.is_reclaimable())
+        .map(|r| hhdm_offset + r.aligned_base())
+        .min()
+        .expect("no usable memory");
+
+    let mut buddy = BUDDY.lock();
+    buddy.set_base(min_virt as usize);
+
+    // then add_region calls as before
     memory::heap::init(
         boot.regions(),
         boot.kernel_phys_start,
@@ -85,11 +97,11 @@ pub extern "C" fn kernel_main() -> ! {
         serial_println!("[kernel] fb init ok");
     }
 
-    /* // ── Step 6: release bootloader-reclaimable pages into the buddy ───────
+    // ── Step 6: release bootloader-reclaimable pages into the buddy ───────
     // Safety: VMM is up, all Limine response data has been consumed into
     // `boot`'s owned fields. No pointer into reclaimable memory is live.
     unsafe { boot.release() };
-    serial_println!("[kernel] boot pages released"); */
+    serial_println!("[kernel] boot pages released"); 
 
     // ── Kernel is fully initialized ───────────────────────────────────────
     println!("my-kernel booting...");

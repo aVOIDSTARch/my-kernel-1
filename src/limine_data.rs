@@ -1,4 +1,4 @@
-// v0.0.7
+// v0.0.9
 //! Limine boot protocol data harvesting.
 //!
 //! This module is the **sole** point of contact between the kernel and Limine.
@@ -387,10 +387,13 @@ impl LimineData {
 
             let virt_base = (hhdm_offset + base) as usize;
 
-            // The buddy uses a single contiguous index space anchored at the
-            // first region it received. Any reclaimable region whose virtual
-            // base precedes that anchor cannot be represented without a full
-            // redesign of the allocator. Skip it rather than panic.
+            // The low BootloaderReclaimable region (physical 0x1000-0x53000)
+            // contains Limine's active page tables. Overwriting it with
+            // FreeBlock headers would corrupt the page table walk, causing a
+            // fault on the next write through HHDM. Skip any region that falls
+            // below the buddy's base; those pages can only be reclaimed after
+            // a new PML4 built from Usable pages has been installed and CR3
+            // has been switched.
             if virt_base < buddy.base() {
                 continue;
             }
