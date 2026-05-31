@@ -1,4 +1,4 @@
-// v0.0.4
+// v0.0.5
 #![no_std]
 #![no_main]
 #![feature(abi_x86_interrupt)]
@@ -13,6 +13,7 @@ mod limine_data;
 mod memory;
 mod panic;
 mod testing;
+mod timer;
 mod writers;
 
 use limine_data::LimineData;
@@ -58,6 +59,11 @@ pub extern "C" fn kernel_main() -> ! {
     interrupts::init();
     serial_println!("[kernel] idt ok");
 
+    // ── Step 2.5: PIT timer ───────────────────────────────────────────────
+    // Program before enabling interrupts so the first tick fires at 1 kHz.
+    timer::init();
+    serial_println!("[kernel] timer ok");
+
     // ── Step 3: heap (buddy seeded from usable regions, TLSF on top) ─────
     memory::heap::init(
         boot.regions(),
@@ -70,6 +76,23 @@ pub extern "C" fn kernel_main() -> ! {
     // ── Step 4: VMM ───────────────────────────────────────────────────────
     memory::vmm::init(boot.hhdm_offset);
     serial_println!("[kernel] vmm ok");
+
+    // ── Step 4.5: LAPIC ───────────────────────────────────────────────────
+    // Map and enable the local APIC so the spurious vector is handled and
+    // the LAPIC is ready for future APIC-timer or IPI use.
+    if interrupts::apic::apic_supported() {
+        const LAPIC_PHYS: u64 = 0xFEE0_0000;
+        const LAPIC_SIZE: u64 = 0x1000;
+        let lapic_virt = boot.hhdm_offset + LAPIC_PHYS;
+        unsafe {
+            memory::vmm::get()
+                .map_mmio(lapic_virt, LAPIC_PHYS, LAPIC_SIZE,
+                          mantle::prot::Protection::MMIO_UC)
+                .expect("LAPIC MMIO map failed");
+            interrupts::apic::init_lapic(lapic_virt);
+        }
+        serial_println!("[kernel] lapic ok");
+    }
 
     // ── Step 5: framebuffer ───────────────────────────────────────────────
     // Limine does NOT include the framebuffer region in its HHDM mapping.

@@ -1,4 +1,4 @@
-// v0.0.2
+// v0.0.4
 use super::{dispatch, pic, stats, vectors::*};
 use lazy_static::lazy_static;
 use pc_keyboard::{layouts, HandleControl, PS2Keyboard, ScancodeSet1};
@@ -133,10 +133,16 @@ pub extern "x86-interrupt" fn virtualization_handler(frame: InterruptStackFrame)
 
 pub extern "x86-interrupt" fn timer_handler(_frame: InterruptStackFrame) {
     stats::record(PIC_IRQ_TIMER);
+    crate::timer::tick();
     unsafe {
         dispatch::dispatch(0); // IRQ0
         pic::end_of_interrupt(PIC_IRQ_TIMER);
     }
+}
+
+pub extern "x86-interrupt" fn apic_spurious_handler(_frame: InterruptStackFrame) {
+    stats::record(APIC_SPURIOUS);
+    // Spurious LAPIC interrupts must not be acknowledged with an EOI.
 }
 
 lazy_static! {

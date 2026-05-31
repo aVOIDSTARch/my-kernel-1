@@ -18,22 +18,26 @@
 
 ---
 
-## Phase 2 -- Interrupt & Timer Infrastructure  [MOSTLY COMPLETE]
+## Phase 2 -- Interrupt & Timer Infrastructure  [COMPLETE]
 
 - [done] GDT + TSS: GlobalDescriptorTable with kernel code/data/TSS; three IST
   stacks (double-fault, NMI, machine-check); loaded in gdt::init()
 - [done] IDT + full exception set: all x86 exceptions wired with appropriate
   handlers (page fault panics with CR2 address, GPF panics with error code,
-  double-fault via IST); interrupts enabled in kernel_main
+  double-fault via IST); spurious LAPIC vector 0xFF registered; interrupts
+  enabled in kernel_main
 - [done] PIC 8259 init: pic::init() programs both 8259s with offsets 0x20/0x28;
   mask_irq/unmask_irq/eoi helpers; spurious IRQ detection
 - [done] IRQ dispatch table: dispatch::dispatch(irq) function-pointer registry;
   handlers for timer, keyboard, and other IRQ lines registered at boot
-- [partial] APIC: LocalApic struct with init/eoi/send_ipi in
-  src/interrupts/apic.rs; not yet switched to from PIC; disable_pic() exists
-- [partial] PIT/APIC timer: timer_handler() (PIC IRQ0) calls dispatch; no PIT
-  frequency programming; no tick counter; no uptime_ms()/sleep_ms()
-- [todo] APIC timer: replace PIT with APIC timer after PIC->APIC migration
+- [done] LAPIC enabled: apic_supported() checked via CPUID; LAPIC MMIO
+  (0xFEE00000) mapped MMIO_UC and initialized at boot; init_lapic() in
+  src/interrupts/apic.rs; disable_pic() ready for future I/O APIC migration
+- [done] PIT timer at 1 kHz: pit programmed with divisor 1193 in src/timer.rs;
+  timer_handler increments TICKS AtomicU64 on every IRQ0; uptime_ms() and
+  sleep_ms() available kernel-wide
+- [note] APIC timer and I/O APIC routing deferred: requires ACPI MADT parsing
+  and is only needed for SMP or to replace the PIT; PIC stays for external IRQs
 
 ---
 
@@ -107,9 +111,8 @@ Minimum viable shell requires Phases 1-4 complete plus Phase 5 if commands
 need to run concurrently -- all without touching filesystems or user mode.
 
 Immediate next steps from current state:
-1. Complete Phase 2: PIC->APIC migration, PIT frequency init, tick counter
-2. Complete Phase 3: keyboard event queue, delivery to TTY layer
-3. Phase 4 input: line discipline, read_line, cursor, ANSI sequences
-4. Phase 5: cooperative tasking so the shell can block on input
+1. Complete Phase 3: keyboard event queue, deliver decoded keys to TTY layer
+2. Phase 4 input: line discipline, read_line, cursor, ANSI sequences
+3. Phase 5: cooperative tasking so the shell can block on input
 
 Phases 7-8 are what turn the shell into a general-purpose OS entry point.

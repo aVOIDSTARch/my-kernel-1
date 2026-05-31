@@ -1,4 +1,4 @@
-// v0.0.2
+// v0.0.4
 use super::handlers::*;
 use super::vectors::*;
 use crate::gdt;
@@ -50,6 +50,10 @@ lazy_static! {
         idt[PIC_IRQ_MOUSE].set_handler_fn(mouse_handler);
         idt[PIC_IRQ_ATA_PRIMARY].set_handler_fn(ata_primary_handler);
         idt[PIC_IRQ_ATA_SECONDARY].set_handler_fn(ata_secondary_handler);
+
+        // LAPIC spurious vector (0xFF): fires when LAPIC is enabled and a
+        // spurious interrupt arrives. Must not be acknowledged with EOI.
+        idt[APIC_SPURIOUS].set_handler_fn(apic_spurious_handler);
 
         idt
     };
