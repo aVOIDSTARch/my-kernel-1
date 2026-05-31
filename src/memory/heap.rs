@@ -1,4 +1,4 @@
-// v0.0.3
+// v0.0.4
 use abalone::{buddy::BUDDY, tlsf::TlsfAllocator};
 use bitwise::align::{align_down, align_up};
 
@@ -34,7 +34,7 @@ pub fn init(
 
         for region in regions {
             if region.region_type != MemoryRegionType::Usable
-                && region.region_type != MemoryRegionType::BootloaderReclaimable
+                // Skip usable regions that are entirely consumed by the kernel.
                 {
                     serial_println!("[memmap] skipping {:#x}+{:#x} {:?}",
                         region.base, region.length, region.region_type);

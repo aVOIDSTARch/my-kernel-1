@@ -1,4 +1,4 @@
-// v0.0.2
+// v0.0.3
 //! Binary buddy allocator for x86_64 bare-metal.
 //!
 //! Manages a contiguous address space (physical or virtual) as a binary buddy
@@ -60,6 +60,8 @@ pub struct BuddyAllocator {
     stats:      AllocStats,
 }
 
+
+
 // SAFETY: guarded by Mutex<BuddyAllocator>.
 unsafe impl Send for BuddyAllocator {}
 
@@ -80,6 +82,9 @@ impl BuddyAllocator {
             },
         }
     }
+
+    // Expose base address and total size for testing and diagnostics.
+    pub fn base(&self) -> usize { self.base }
 
     /// Register a physical memory region as a virtual address range under HHDM.
     ///
