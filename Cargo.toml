@@ -7,6 +7,15 @@ edition = "2024"
 name = "kernel"
 path = "src/main.rs"
 
+[package.metadata.bootimage]
+test-args = [
+    "-device", "isa-debug-exit,iobase=0xf4,iosize=0x04",
+    "-serial", "stdio",
+    "-display", "none",
+]
+test-success-exit-code = 33
+test-timeout = 300
+
 [dependencies]
 abalone   = { path = "abalone" }
 bitwise   = { path = "bitwise" }
@@ -21,14 +30,10 @@ uart_16550  = "0.3"
 volatile    = "0.2"
 
 [profile.dev]
-panic = "abort"
 opt-level = 1          # 0 can produce stack frames too large for IST stacks
 
-[profile.test]
-panic = "abort"        # must match dev; mismatching causes build-std to emit two core crates
-
 [profile.release]
-panic = "abort"
+panic = "abort"        # rustflags also sets this; kept here for release-profile explicitness
 opt-level = 3
 lto = "thin"
 codegen-units = 1
