@@ -1,4 +1,4 @@
-// v0.0.3
+// v0.0.5
 //! Limine boot protocol data harvesting.
 //!
 //! This module is the **sole** point of contact between the kernel and Limine.
@@ -28,7 +28,7 @@ use limine::{
     memmap::{
         MEMMAP_ACPI_NVS, MEMMAP_ACPI_RECLAIMABLE, MEMMAP_BAD_MEMORY,
         MEMMAP_BOOTLOADER_RECLAIMABLE, MEMMAP_EXECUTABLE_AND_MODULES,
-        MEMMAP_FRAMEBUFFER, MEMMAP_RESERVED, MEMMAP_USABLE,
+        MEMMAP_FRAMEBUFFER, MEMMAP_USABLE,
     },
     request::{
         BootloaderInfoRequest, ExecutableAddressRequest, FramebufferRequest, HhdmRequest,
@@ -149,6 +149,10 @@ pub struct FramebufferInfo {
     pub bits_per_pixel: u16,
     /// Total byte size of the framebuffer (`height * pitch`).
     pub byte_size:      u64,
+    /// Red mask shift, e.g. 11 for RGB565.
+    pub r_shift:         u8,
+    pub g_shift:         u8,
+    pub b_shift:         u8,
 }
 
 /// Bootloader name and version copied into fixed-size byte arrays.
@@ -194,6 +198,7 @@ pub struct LimineData {
     /// address; we subtract hhdm_offset so callers always get physical.
     pub rsdp_phys:       Option<u64>,
     pub bootloader_info: Option<BootloaderInfo>,
+
 }
 
 impl LimineData {
@@ -266,7 +271,7 @@ impl LimineData {
 
         for entry in memmap.entries() {
             if region_count >= MAX_REGIONS { break; }
-            let region_type = match entry.type_ {
+            let region_type = match entry.entry_type {
                 t if t == MEMMAP_USABLE                  => MemoryRegionType::Usable,
                 t if t == MEMMAP_BOOTLOADER_RECLAIMABLE  => MemoryRegionType::BootloaderReclaimable,
                 t if t == MEMMAP_ACPI_RECLAIMABLE        => MemoryRegionType::AcpiReclaimable,
@@ -290,16 +295,19 @@ impl LimineData {
             .response()
             .and_then(|r| r.framebuffers().next())
             .map(|fb| {
-                let virt_addr = fb.address as u64;
+                let virt_addr = fb.addr() as u64;
                 let phys_addr = virt_addr - hhdm_offset;
-                let byte_size = fb.height as u64 * fb.pitch as u64;
+                let byte_size = fb.height() as u64 * fb.pitch();
                 FramebufferInfo {
                     virt_addr,
                     phys_addr,
-                    width:          fb.width,
-                    height:         fb.height,
-                    pitch:          fb.pitch,
-                    bits_per_pixel: fb.bpp,
+                    width:          fb.width(),
+                    height:         fb.height(),
+                    pitch:          fb.pitch() as u32,
+                    bits_per_pixel: fb.bpp(),
+                    r_shift:         fb.red_mask_shift(),
+                    g_shift:         fb.green_mask_shift(),
+                    b_shift:         fb.blue_mask_shift(),
                     byte_size,
                 }
             });
@@ -309,7 +317,7 @@ impl LimineData {
         // so callers always receive a consistent physical address.
         let rsdp_phys = RSDP_REQUEST
             .response()
-            .map(|r| (r.address as u64).saturating_sub(hhdm_offset));
+            .map(|r| (r.address() as u64).saturating_sub(hhdm_offset));
 
         // ── Bootloader info ───────────────────────────────────────────────
         let bootloader_info = BOOTLOADER_INFO_REQUEST
@@ -321,19 +329,16 @@ impl LimineData {
                     version:     [0u8; 64],
                     version_len: 0,
                 };
-                // r.name / r.version are *const i8 C strings.
-                let copy_cstr = |dst: &mut [u8; 64], ptr: *const i8| -> usize {
-                    let mut len = 0usize;
-                    while len < 63 {
-                        let b = unsafe { *ptr.add(len) } as u8;
-                        if b == 0 { break; }
-                        dst[len] = b;
-                        len += 1;
-                    }
-                    len
-                };
-                info.name_len    = copy_cstr(&mut info.name,    r.name);
-                info.version_len = copy_cstr(&mut info.version, r.version);
+                let name_bytes    = r.name().to_bytes();
+                let name_len      = name_bytes.len().min(63);
+                info.name[..name_len].copy_from_slice(&name_bytes[..name_len]);
+                info.name_len     = name_len;
+
+                let version_bytes = r.version().to_bytes();
+                let version_len   = version_bytes.len().min(63);
+                info.version[..version_len].copy_from_slice(&version_bytes[..version_len]);
+                info.version_len  = version_len;
+
                 info
             });
 
