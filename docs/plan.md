@@ -1,91 +1,115 @@
-# Kernel → Terminal Shell: Multiphase Roadmap
+# Kernel -- Terminal Shell: Multiphase Roadmap
 
 ---
 
-## Phase 1 — Memory Management Foundation
-*Pre-requisite for everything. Without dynamic allocation, no complex data structures are possible.*
+## Phase 1 -- Memory Management Foundation  [COMPLETE]
 
-- **Virtual Memory Manager (VMM)**: page table walker, `map`/`unmap`/`remap` API over Limine's initial page tables
-- **Kernel Heap**: implement a heap allocator (linked-list or slab); wire in Rust's global allocator trait
-- **`alloc` crate support**: enable `Box`, `Vec`, `String`, `BTreeMap` etc. throughout the kernel
-- **MMIO abstraction**: typed, page-mapped windows into device register regions
-
----
-
-## Phase 2 — Interrupt & Timer Infrastructure
-*Keyboard events arrive via IRQs; timers drive any future scheduling.*
-
-- **PIC → APIC migration**: detect APIC via ACPI/CPUID, remap/mask legacy PIC, enable LAPIC
-- **IRQ dispatch table**: vector-to-handler registry, EOI handling, spurious IRQ suppression
-- **PIT / APIC timer**: periodic tick at a fixed rate; `uptime_ms()` and `sleep_ms()` primitives
-- **Software exceptions**: complete fault handlers (page fault, GPF, double fault with IST)
+- [done] Virtual Memory Manager (VMM): PageTableWalker in mantle/ with
+  map/unmap/translate/map_mmio; Protection::KERNEL_RO/RW/RX/MMIO_UC/MMIO_WC;
+  PAT MSR programmed for write-combining at boot
+- [done] Kernel Heap: BuddyAllocator (page-level) + TlsfAllocator (sub-page);
+  wired as #[global_allocator] in src/memory/heap.rs
+- [done] alloc crate support: extern crate alloc; Box, Vec, String, BTreeMap
+  available kernel-wide
+- [done] MMIO abstraction: map_mmio() with typed Protection variants;
+  framebuffer mapped MMIO_WC; device BARs use MMIO_UC
+- [done] BootloaderReclaimable release: LimineData::release() feeds reclaimed
+  pages into buddy after VMM is up
 
 ---
 
-## Phase 3 — Input Drivers
-*The shell needs a way to receive characters from the user.*
+## Phase 2 -- Interrupt & Timer Infrastructure  [MOSTLY COMPLETE]
 
-- **PS/2 controller init**: flush output buffer, configure command byte, enable IRQ1/IRQ12
-- **Keyboard driver**: scan-code set 2 decode, modifier-key state (Shift, Ctrl, Alt, Caps Lock)
-- **Keyboard event queue**: lock-free ring buffer fed by the IRQ handler, consumed by the terminal layer
-- **Serial input** *(optional)*: enable RX interrupt on UART so serial can mirror the keyboard path
-
----
-
-## Phase 4 — Terminal / TTY Layer
-*Turns raw key events into an interactive line-editing experience.*
-
-- **Canonical line discipline**: echo typed characters, handle Backspace / Ctrl+U (kill line) / Ctrl+C
-- **`read_line()` blocking call**: blocks the caller until `\n` or EOF, returns owned `String`
-- **Cursor rendering**: blinking block cursor at current column; erase/redraw on move
-- **ANSI escape sequences**: CSI codes for cursor movement, color, clear-screen in the framebuffer writer
-- **Scroll improvement**: ensure smooth scroll in framebuffer writer for long output
+- [done] GDT + TSS: GlobalDescriptorTable with kernel code/data/TSS; three IST
+  stacks (double-fault, NMI, machine-check); loaded in gdt::init()
+- [done] IDT + full exception set: all x86 exceptions wired with appropriate
+  handlers (page fault panics with CR2 address, GPF panics with error code,
+  double-fault via IST); interrupts enabled in kernel_main
+- [done] PIC 8259 init: pic::init() programs both 8259s with offsets 0x20/0x28;
+  mask_irq/unmask_irq/eoi helpers; spurious IRQ detection
+- [done] IRQ dispatch table: dispatch::dispatch(irq) function-pointer registry;
+  handlers for timer, keyboard, and other IRQ lines registered at boot
+- [partial] APIC: LocalApic struct with init/eoi/send_ipi in
+  src/interrupts/apic.rs; not yet switched to from PIC; disable_pic() exists
+- [partial] PIT/APIC timer: timer_handler() (PIC IRQ0) calls dispatch; no PIT
+  frequency programming; no tick counter; no uptime_ms()/sleep_ms()
+- [todo] APIC timer: replace PIT with APIC timer after PIC->APIC migration
 
 ---
 
-## Phase 5 — Kernel Task Foundation
-*A shell that can run sub-commands needs at least minimal cooperative tasking.*
+## Phase 3 -- Input Drivers  [PARTIAL]
 
-- **Task / thread struct**: saved register file, kernel stack pointer, state (runnable / blocked / dead)
-- **Context switch**: `switch_to(next: &Task)` — save callee-saved registers, swap RSP
-- **Simple scheduler**: round-robin run-queue; `yield()` and `block()`/`wake()` primitives
-- **Synchronization primitives**: `Mutex`, `Semaphore`, `WaitQueue` built on the scheduler
-
----
-
-## Phase 6 — Shell
-*The deliverable of all prior phases.*
-
-- **Command-line parser**: tokenizer (quoted strings, whitespace splitting), argument vector
-- **Built-in commands**: `help`, `echo`, `clear`, `meminfo`, `halt`, `uptime`, `lspci` stub
-- **Command dispatch**: registry of name → handler fn; extensible for future external commands
-- **History**: circular buffer of past lines; up/down arrow navigation via ANSI sequences
-- **Tab completion** *(stretch)*: complete against the built-in command registry
+- [partial] PS/2 keyboard: keyboard_handler() (PIC IRQ1) decodes scan codes via
+  pc_keyboard crate (US104 layout, Set 1); no delivery mechanism yet --
+  key events are decoded but not enqueued anywhere
+- [todo] Keyboard event queue: lock-free ring buffer fed by IRQ handler
+- [todo] PS/2 controller init: explicit flush/configure step before enabling IRQ
+- [todo] Serial input RX interrupt: UART RX not yet enabled; serial is TX-only
 
 ---
 
-## Phase 7 — Filesystem & Executable Loading
-*Required only if the shell should run programs beyond built-ins.*
+## Phase 4 -- Terminal / TTY Layer  [OUTPUT DONE; INPUT NOT STARTED]
 
-- **VirtIO block driver** (QEMU) or **ATA PIO driver** (bare metal): sector read/write
-- **GPT partition table parser**
-- **FAT32 or ext2 read-only driver**: directory listing, file open/read
-- **ELF64 loader**: parse PT_LOAD segments, allocate pages, set entry point
+- [done] Framebuffer writer: FbWriter with 8x16 IBM PC glyph rendering, scroll,
+  cursor tracking, interrupt-safe locking; init_from_info() in
+  src/writers/framebuffer.rs
+- [done] Serial writer: SERIAL1 (COM1) via uart_16550; serial_println! macro
+  operational throughout boot
+- [done] print!/println! macros: route through framebuffer when initialized,
+  fall back to VGA text buffer
+- [todo] Canonical line discipline: echo, Backspace, Ctrl+U, Ctrl+C
+- [todo] read_line(): blocking call returning owned String
+- [todo] Cursor rendering: blinking block cursor; erase/redraw on move
+- [todo] ANSI escape sequences: CSI codes for cursor movement, color, clear
 
 ---
 
-## Phase 8 — User Mode & System Calls
-*Required only if shell commands run in ring 3.*
+## Phase 5 -- Kernel Task Foundation  [NOT STARTED]
 
-- **User-mode page tables**: separate address space per process; kernel mapped high
-- **SYSCALL/SYSRET entry point**: `MSR_LSTAR`, stack switch, argument convention
-- **Core syscalls**: `read`, `write`, `exit`, `fork`/`exec` stubs, `mmap`
-- **User-mode stack setup**: initial stack with `argv`/`envp`, ABI-compliant entry
+- [todo] Task/thread struct: saved register file, kernel stack pointer, state
+- [todo] Context switch: switch_to(next) -- save callee-saved registers, swap RSP
+- [todo] Simple scheduler: round-robin run-queue; yield()/block()/wake()
+- [todo] Synchronization primitives: Mutex, Semaphore, WaitQueue
+
+---
+
+## Phase 6 -- Shell  [NOT STARTED]
+
+- [todo] Command-line parser: tokenizer (quoted strings, whitespace splitting)
+- [todo] Built-in commands: help, echo, clear, meminfo, halt, uptime, lspci stub
+- [todo] Command dispatch: name-to-handler registry
+- [todo] History: circular buffer; up/down arrow navigation
+- [todo] Tab completion (stretch): complete against built-in command registry
+
+---
+
+## Phase 7 -- Filesystem & Executable Loading  [NOT STARTED]
+
+- [todo] VirtIO block driver (QEMU) or ATA PIO driver (bare metal)
+- [todo] GPT partition table parser
+- [todo] FAT32 or ext2 read-only driver: directory listing, file open/read
+- [todo] ELF64 loader: parse PT_LOAD segments, allocate pages, set entry point
+
+---
+
+## Phase 8 -- User Mode & System Calls  [NOT STARTED]
+
+- [todo] User-mode page tables: separate address space per process
+- [todo] SYSCALL/SYSRET entry: MSR_LSTAR, stack switch, argument convention
+- [todo] Core syscalls: read, write, exit, fork/exec stubs, mmap
+- [todo] User-mode stack: argv/envp, ABI-compliant entry
 
 ---
 
 ## Notes
 
-**Minimum viable shell** requires Phases 1–4 (plus Phase 5 if commands need to run concurrently) — all without touching filesystems or user mode.
+Minimum viable shell requires Phases 1-4 complete plus Phase 5 if commands
+need to run concurrently -- all without touching filesystems or user mode.
 
-**Phases 7–8** are what turn the shell into a general-purpose OS entry point.
+Immediate next steps from current state:
+1. Complete Phase 2: PIC->APIC migration, PIT frequency init, tick counter
+2. Complete Phase 3: keyboard event queue, delivery to TTY layer
+3. Phase 4 input: line discipline, read_line, cursor, ANSI sequences
+4. Phase 5: cooperative tasking so the shell can block on input
+
+Phases 7-8 are what turn the shell into a general-purpose OS entry point.
