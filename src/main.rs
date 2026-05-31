@@ -1,4 +1,4 @@
-// v0.0.2
+// v0.0.4
 #![no_std]
 #![no_main]
 #![feature(abi_x86_interrupt)]
@@ -78,7 +78,10 @@ pub extern "C" fn kernel_main() -> ! {
         serial_println!("[kernel] fb: virt={:#x} phys={:#x} size={:#x}",
             fb.virt_addr, fb.phys_addr, fb.byte_size);
         unsafe {
-            let _ = memory::vmm::get().map_mmio(fb.virt_addr, fb.phys_addr, fb.byte_size);
+            memory::vmm::get()
+                .map_mmio(fb.virt_addr, fb.phys_addr, fb.byte_size,
+                          mantle::prot::Protection::MMIO_WC)
+                .expect("fb MMIO map failed");
         }
         serial_println!("[kernel] fb mapped");
         writers::framebuffer::init_from_info(fb);

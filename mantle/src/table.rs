@@ -1,4 +1,9 @@
-// v0.0.2
+// v0.0.4
+// Memory ordering: x86_64's TSO model guarantees that stores to page-table
+// memory are observed by the MMU walker in program order on the local CPU.
+// read_volatile / write_volatile are sufficient to prevent compiler reordering.
+// A port to weakly-ordered architectures (AArch64, RISC-V) requires DSB/FENCE
+// instructions before TLB invalidation.
 use core::ptr;
 
 /// A single level of the x86_64 4-level page table hierarchy.
@@ -24,11 +29,14 @@ impl PageTable {
         unsafe { ptr::write_volatile(&mut self.entries[index], value) }
     }
 
-    /// Zero all 512 entries.
+    /// Zero all 512 entries using a single memset-equivalent store sequence.
     #[inline]
     pub fn zero(&mut self) {
-        for i in 0..512 {
-            self.write(i, 0);
+        // Safety: entries is [u64; 512]; all-zero bits are valid for u64.
+        // This frame is freshly allocated and not yet visible to the MMU,
+        // so non-volatile memset semantics are correct here.
+        unsafe {
+            ptr::write_bytes(self.entries.as_mut_ptr(), 0, 512);
         }
     }
 }

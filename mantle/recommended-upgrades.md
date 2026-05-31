@@ -1,7 +1,7 @@
 # VMM Review & Recommended Upgrades
 
 **Files reviewed:** `walker.rs` (v0.0.2), `table.rs` (v0.0.2), `prot.rs` (v0.0.2),
-`heap.rs`, `main.rs`, `limine_data.rs`  
+`heap.rs`, `main.rs`, `limine_data.rs`
 **Architecture:** x86_64, Limine boot protocol, Rust `#![no_std]` + `alloc`
 
 The walker is structurally sound for a v0 kernel: the HHDM translation model
@@ -16,7 +16,7 @@ and missing capabilities, ordered by severity, with specific line references.
 
 ### C1. `Protection::MMIO` Sets PWT+PCD — Produces Write-Through, Not UC
 
-**File:** `prot.rs` — `Protection::MMIO`  
+**File:** `prot.rs` — `Protection::MMIO`
 **Severity: Critical**
 
 ```rust
@@ -60,7 +60,7 @@ However there are two live problems:
    framebuffer this means speculative write reordering and torn pixel writes.
 
 2. **The framebuffer should be Write-Combining, not UC.** UC (strong)
-   serialises every store. WC allows the write-combining buffers to coalesce
+   serializes every store. WC allows the write-combining buffers to coalesce
    pixel stores into 64-byte burst transactions before committing to the
    memory bus. For a 1920×1080×32bpp framebuffer the throughput difference is
    roughly 4–8×. The correct flag combination for WC under the default PAT is
@@ -105,7 +105,7 @@ that require strict ordering (e.g. PCIe config space) should use `MMIO_UC`.
 
 ### C2. `alloc_table_frame` Calls `abalone::buddy::alloc_pages(0)` Without Locking
 
-**File:** `walker.rs` — `alloc_table_frame`  
+**File:** `walker.rs` — `alloc_table_frame`
 **Severity: Critical**
 
 ```rust
@@ -166,7 +166,7 @@ virtual/physical confusion at the type level.
 
 ### C3. `map` Overwrites an Existing Mapping Without Returning the Old Frame
 
-**File:** `walker.rs` — `map`  
+**File:** `walker.rs` — `map`
 **Severity: Critical (memory leak becoming use-after-free)**
 
 ```rust
@@ -222,7 +222,7 @@ pub unsafe fn map(&self, vaddr: u64, phys: u64, prot: Protection)
 
 ### H1. `descend_or_create` Sets USER_ACCESSIBLE on No Intermediate Entry — But More Importantly, It May Not
 
-**File:** `walker.rs` — `descend_or_create`  
+**File:** `walker.rs` — `descend_or_create`
 **Severity: High**
 
 ```rust
@@ -253,7 +253,7 @@ whether the mapping is user-accessible.
 
 ### H2. Intermediate Table Entries Have No NX Control — and No GLOBAL Flag
 
-**File:** `walker.rs` — `descend_or_create`, `map`  
+**File:** `walker.rs` — `descend_or_create`, `map`
 **Severity: High**
 
 Kernel mappings should set the `GLOBAL` flag (bit 8) in leaf PTEs. When CR4.PGE
@@ -273,7 +273,7 @@ TLB entries on all CPUs.
 
 ### H3. `table.rs` Uses `read_volatile` / `write_volatile` — Correct but Incomplete
 
-**File:** `table.rs` — `read`, `write`  
+**File:** `table.rs` — `read`, `write`
 **Severity: High (correctness gap, not a bug today)**
 
 ```rust
@@ -313,7 +313,7 @@ bug. Add a comment at the top of `table.rs`:
 
 ### H4. No Virtual Address Space Allocator
 
-**File:** `main.rs`, `walker.rs`  
+**File:** `main.rs`, `walker.rs`
 **Severity: High**
 
 `map_mmio(virt_start, phys_start, size)` takes an explicit virtual address.
@@ -336,7 +336,7 @@ the region ceiling, aligned to 2 MiB.
 
 ### H5. `map` Returns `Option<()>` — OOM and Existing-Mapping Are Indistinguishable
 
-**File:** `walker.rs` — `map`, `map_mmio`  
+**File:** `walker.rs` — `map`, `map_mmio`
 **Severity: High**
 
 `alloc_table_frame` returns `None` on buddy exhaustion. `descend_or_create`
@@ -370,7 +370,7 @@ old frame, per C3). Make `map_mmio` return `Result<(), MapError>`. Add a
 
 ### M1. `PageTable::zero` Issues 512 Volatile Writes — Use `write_bytes`
 
-**File:** `table.rs` — `zero`  
+**File:** `table.rs` — `zero`
 **Severity: Medium (performance)**
 
 ```rust
@@ -405,7 +405,7 @@ in a boot-time flame graph.
 
 ### M2. `walk_existing` Borrows `table_at_phys` Without Lifetime Coupling to `self`
 
-**File:** `walker.rs` — `walk_existing`, `table_at_phys`  
+**File:** `walker.rs` — `walk_existing`, `table_at_phys`
 **Severity: Medium (soundness risk)**
 
 ```rust
@@ -446,7 +446,7 @@ frame" requirement.
 
 ### M3. No Intermediate Table Reclamation in `unmap`
 
-**File:** `walker.rs` — `unmap`  
+**File:** `walker.rs` — `unmap`
 **Severity: Medium (memory leak)**
 
 ```rust
@@ -476,7 +476,7 @@ mapping density.
 
 ### M4. `Protection::KERNEL_RWX` Has No Deprecation Marker
 
-**File:** `prot.rs`  
+**File:** `prot.rs`
 **Severity: Medium (security)**
 
 ```rust
