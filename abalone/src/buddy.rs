@@ -1,4 +1,4 @@
-// v0.0.5
+// v0.0.6
 //! Binary buddy allocator for x86_64 bare-metal.
 //!
 //! Manages a contiguous address space (physical or virtual) as a binary buddy
@@ -106,21 +106,26 @@ impl BuddyAllocator {
         let mut offset_pages = (virt_base - self.base) / PAGE_SIZE;
 
         while remaining > 0 {
-            let order       = (remaining.ilog2() as usize).min(BUDDY_MAX_ORDER - 1);
+            // Maximum order this address is naturally aligned to.
+            let align_order = if offset_pages == 0 {
+                BUDDY_MAX_ORDER - 1
+            } else {
+                offset_pages.trailing_zeros() as usize
+            }.min(BUDDY_MAX_ORDER - 1);
+
+            // Maximum order that fits in the remaining page count.
+            let size_order = (usize::BITS - 1 - remaining.leading_zeros()) as usize;
+            let size_order = size_order.min(BUDDY_MAX_ORDER - 1);
+
+            let order       = align_order.min(size_order);
             let block_pages = 1usize << order;
 
-            if block_pages > remaining || (offset_pages & (block_pages - 1)) != 0 {
-                unsafe { self.free_block(offset_pages, 0); }
-                offset_pages += 1;
-                remaining    -= 1;
-            } else {
-                unsafe { self.free_block(offset_pages, order); }
-                offset_pages += block_pages;
-                remaining    -= block_pages;
-            }
+            unsafe { self.free_block(offset_pages, order); }
+            offset_pages += block_pages;
+            remaining    -= block_pages;
         }
 
-        self.total_pages    += page_count;
+        self.total_pages   += page_count;
         self.stats.total_bytes = (self.total_pages * PAGE_SIZE) as u64;
         self.stats.free_bytes  = self.stats.total_bytes - self.stats.used_bytes;
     }
