@@ -1,8 +1,8 @@
-// v0.0.2
+// v0.0.3
 use abalone::{buddy::BUDDY, tlsf::TlsfAllocator};
 use bitwise::align::{align_down, align_up};
 
-use crate::limine_data::{MemoryRegion, MemoryRegionType};
+use crate::{limine_data::{MemoryRegion, MemoryRegionType}, serial_println};
 
 #[global_allocator]
 static HEAP: TlsfAllocator = TlsfAllocator::new();
@@ -33,8 +33,16 @@ pub fn init(
         let mut buddy = BUDDY.lock();
 
         for region in regions {
-            if region.region_type != MemoryRegionType::Usable {
-                continue;
+            if region.region_type != MemoryRegionType::Usable
+                && region.region_type != MemoryRegionType::BootloaderReclaimable
+                {
+                    serial_println!("[memmap] skipping {:#x}+{:#x} {:?}",
+                        region.base, region.length, region.region_type);
+                    continue;
+                }
+            else {
+                serial_println!("[memmap] using {:#x}+{:#x} {:?}",
+                    region.base, region.length, region.region_type);
             }
 
             let base = region.aligned_base();

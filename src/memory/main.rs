@@ -1,4 +1,4 @@
-// v0.0.2
+// v0.0.3
 #![no_std]
 #![no_main]
 #![feature(abi_x86_interrupt)]
@@ -85,13 +85,13 @@ pub extern "C" fn kernel_main() -> ! {
         serial_println!("[kernel] fb init ok");
     }
 
-    // ── Step 6: release bootloader-reclaimable pages into the buddy ───────
+    /* // ── Step 6: release bootloader-reclaimable pages into the buddy ───────
     // Safety: VMM is up, all Limine response data has been consumed into
     // `boot`'s owned fields. No pointer into reclaimable memory is live.
     unsafe { boot.release() };
-    serial_println!("[kernel] boot pages released");
+    serial_println!("[kernel] boot pages released"); */
 
-    // ── Kernel is fully initialised ───────────────────────────────────────
+    // ── Kernel is fully initialized ───────────────────────────────────────
     println!("my-kernel booting...");
     println!("heap: ok  vmm: ok");
 
