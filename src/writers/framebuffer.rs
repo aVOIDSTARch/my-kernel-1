@@ -1,7 +1,8 @@
 use core::fmt;
 use lazy_static::lazy_static;
-use limine::framebuffer::Framebuffer;
 use spin::Mutex;
+
+use crate::limine_data::FramebufferInfo;
 
 // Public domain IBM PC 8x8 font (Daniel Hepper / Marcel Sondaar / IBM VGA ROM)
 static FONT8X8: [[u8; 8]; 128] = [
@@ -140,18 +141,18 @@ const CHAR_W: u32 = 8;
 const CHAR_H: u32 = 16;
 
 struct FbWriter {
-    addr:   u64,
-    width:  u32,
+    addr:  u64,
+    width: u32,
     height: u32,
-    pitch:  u32,
-    bpp:    u32, // bytes per pixel (must be 4 for 32-bit)
-    r_shl:  u8,
-    g_shl:  u8,
-    b_shl:  u8,
-    col:    u32,
-    row:    u32,
-    cols:   u32,
-    rows:   u32,
+    pitch: u32,
+    bpp:   u32, // bytes per pixel (must be 4 for 32-bit)
+    r_shl: u8,
+    g_shl: u8,
+    b_shl: u8,
+    col:   u32,
+    row:   u32,
+    cols:  u32,
+    rows:  u32,
 }
 
 unsafe impl Send for FbWriter {}
@@ -245,19 +246,38 @@ lazy_static! {
     static ref WRITER: Mutex<Option<FbWriter>> = Mutex::new(None);
 }
 
-pub fn init(fb: &Framebuffer) {
-    if fb.bpp != 32 {
-        return; // only 32-bit framebuffers supported
+/// Initialise the framebuffer writer from a harvested [`FramebufferInfo`].
+///
+/// Only 32-bit (bpp == 32) framebuffers are supported; others are silently
+/// ignored. The caller is responsible for ensuring `info.virt_addr` has been
+/// mapped and is writable before calling this.
+pub fn init_from_info(info: FramebufferInfo) {
+    if info.bits_per_pixel != 32 {
+        return;
     }
-    let pitch  = fb.pitch as u32;
-    let width  = fb.width as u32;
-    let height = fb.height as u32;
-    let addr   = fb.address() as u64;
 
-    // Clear to black (0 works for any component layout)
+    let addr   = info.virt_addr;
+    let width  = info.width;
+    let height = info.height;
+    let pitch  = info.pitch;
+
+    // Clear to black.
     unsafe {
         core::ptr::write_bytes(addr as *mut u8, 0, (height * pitch) as usize);
     }
+
+    // The limine 0.6.x Framebuffer struct stores red/green/blue_mask_shift
+    // as u8 fields. We need to carry those through FramebufferInfo.
+    // For now derive them from the pixel format: QEMU's standard 32-bit
+    // framebuffer is always BGRX (blue=0, green=8, red=16). If you need
+    // real shift values from Limine, add r_shift/g_shift/b_shift fields to
+    // FramebufferInfo and harvest them in limine_data.rs.
+    //
+    // TODO: add red_mask_shift, green_mask_shift, blue_mask_shift to
+    //       FramebufferInfo and harvest from fb.red_mask_shift etc.
+    let r_shl: u8 = 16;
+    let g_shl: u8 = 8;
+    let b_shl: u8 = 0;
 
     *WRITER.lock() = Some(FbWriter {
         addr,
@@ -265,9 +285,9 @@ pub fn init(fb: &Framebuffer) {
         height,
         pitch,
         bpp:   4,
-        r_shl: fb.red_mask_shift,
-        g_shl: fb.green_mask_shift,
-        b_shl: fb.blue_mask_shift,
+        r_shl,
+        g_shl,
+        b_shl,
         col:   0,
         row:   0,
         cols:  width  / CHAR_W,

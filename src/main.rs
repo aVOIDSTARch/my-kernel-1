@@ -90,7 +90,7 @@ pub extern "C" fn kernel_main() -> ! {
     unsafe { boot.release() };
     serial_println!("[kernel] boot pages released");
 
-    // ── Kernel is fully initialised ───────────────────────────────────────
+    // ── Kernel is fully initialized ───────────────────────────────────────
     println!("my-kernel booting...");
     println!("heap: ok  vmm: ok");
 

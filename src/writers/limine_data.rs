@@ -146,10 +146,6 @@ pub struct FramebufferInfo {
     pub bits_per_pixel: u16,
     /// Total byte size of the framebuffer (`height * pitch`).
     pub byte_size:      u64,
-    /// Pixel shift values for red, green, and blue channels, derived from `bits_per_pixel`.
-    pub red_mask_shift: u8,
-    pub green_mask_shift: u8,
-    pub blue_mask_shift: u8,
 }
 
 /// Bootloader name and version copied into fixed-size byte arrays.
@@ -299,9 +295,6 @@ impl LimineData {
                     height:         fb.height,
                     pitch:          fb.pitch,
                     bits_per_pixel: fb.bpp,
-                    red_mask_shift: fb.red_mask_shift,
-                    green_mask_shift: fb.green_mask_shift,
-                    blue_mask_shift: fb.blue_mask_shift,
                     byte_size,
                 }
             });

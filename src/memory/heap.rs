@@ -1,40 +1,48 @@
 use abalone::{buddy::BUDDY, tlsf::TlsfAllocator};
 use bitwise::align::{align_down, align_up};
-use limine::memmap::{Entry, MEMMAP_BOOTLOADER_RECLAIMABLE, MEMMAP_USABLE};
+
+use crate::limine_data::{MemoryRegion, MemoryRegionType};
 
 #[global_allocator]
 static HEAP: TlsfAllocator = TlsfAllocator::new();
 
 /// Initialise the kernel heap.
 ///
-/// Feeds all usable and bootloader-reclaimable physical memory regions (via
-/// HHDM) into the buddy allocator, skipping the kernel's own pages, then
-/// carves a 4 MiB pool from the buddy to bootstrap the TLSF heap.
+/// Feeds all immediately-usable physical memory regions (via HHDM) into the
+/// buddy allocator, punching out the kernel's own pages, then carves a 4 MiB
+/// pool from the buddy to bootstrap the TLSF heap.
+///
+/// Bootloader-reclaimable regions are intentionally excluded here; they are
+/// added by `LimineData::release()` after the VMM is up and all Limine
+/// response pointers have been discarded.
 ///
 /// After this returns, `Box`, `Vec`, `String`, etc. are available.
 pub fn init(
-    entries: &[&Entry],
+    regions:           &[MemoryRegion],
     kernel_phys_start: u64,
-    kernel_phys_end: u64,
-    hhdm_offset: u64,
+    kernel_phys_end:   u64,
+    hhdm_offset:       u64,
 ) {
-    {
-        // Align raw memory regions to page boundaries and add them to the buddy allocator,
-        let kernel_phys_start = align_down(kernel_phys_start, 4096);
-        let kernel_phys_end   = align_up(kernel_phys_end, 4096);
+    // Defensive alignment — limine_data already guarantees page alignment on
+    // usable entries, but correctness should not depend on call-site discipline.
+    let kernel_phys_start = align_down(kernel_phys_start, 4096);
+    let kernel_phys_end   = align_up(kernel_phys_end, 4096);
 
+    {
         let mut buddy = BUDDY.lock();
 
-        for entry in entries {
-            if entry.type_ != MEMMAP_USABLE && entry.type_ != MEMMAP_BOOTLOADER_RECLAIMABLE {
+        for region in regions {
+            if region.region_type != MemoryRegionType::Usable {
                 continue;
             }
 
-            let base = align_up(entry.base, 4096);
-            let end  = align_down(entry.base + entry.length, 4096);
+            let base = region.aligned_base();
+            let end  = region.aligned_end();
             if base >= end { continue; }
 
-            // Add the region in up to two parts, punching out the kernel range.
+            // Add in up to two parts, punching out the kernel range.
+            //
+            // Case 1: region extends below the kernel.
             if base < kernel_phys_start {
                 let part_end   = end.min(kernel_phys_start);
                 let page_count = ((part_end - base) / 4096) as usize;
@@ -44,6 +52,7 @@ pub fn init(
                     }
                 }
             }
+            // Case 2: region extends above the kernel.
             if end > kernel_phys_end {
                 let part_start = base.max(kernel_phys_end);
                 let page_count = ((end - part_start) / 4096) as usize;
