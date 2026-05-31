@@ -1,4 +1,4 @@
-// v0.0.6
+// v0.0.7
 //! Limine boot protocol data harvesting.
 //!
 //! This module is the **sole** point of contact between the kernel and Limine.
@@ -385,14 +385,25 @@ impl LimineData {
             let end  = region.aligned_end();
             if base >= end { continue; }
 
+            let virt_base = (hhdm_offset + base) as usize;
+
+            // The buddy uses a single contiguous index space anchored at the
+            // first region it received. Any reclaimable region whose virtual
+            // base precedes that anchor cannot be represented without a full
+            // redesign of the allocator. Skip it rather than panic.
+            if virt_base < buddy.base() {
+                continue;
+            }
+
             let page_count = ((end - base) / 4096) as usize;
             if page_count == 0 { continue; }
 
             unsafe {
-                buddy.add_region((hhdm_offset + base) as usize, page_count);
+                buddy.add_region(virt_base, page_count);
             }
         }
         // `self` drops here. LimineData is stack-allocated with no heap
         // pointers, so drop is a no-op. The physical pages are now free.
     }
 }
+
