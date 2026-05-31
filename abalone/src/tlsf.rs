@@ -1,3 +1,4 @@
+// v0.0.2
 //! Two-Level Segregated Fit allocator — O(1) worst-case alloc and dealloc.
 //!
 //! Backed by the buddy allocator. Registered as `#[global_allocator]` for the

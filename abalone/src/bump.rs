@@ -1,3 +1,4 @@
+// v0.0.2
 //! Bump allocator — simple linear allocator for the legacy bootloader path.
 
 use crate::{align_up, Locked};

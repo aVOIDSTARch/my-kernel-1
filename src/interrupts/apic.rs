@@ -1,3 +1,4 @@
+// v0.0.2
 use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 static APIC_BASE_VADDR: AtomicU64 = AtomicU64::new(0);

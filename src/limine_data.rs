@@ -1,3 +1,4 @@
+// v0.0.2
 //! Limine boot protocol data harvesting.
 //!
 //! This module is the **sole** point of contact between the kernel and Limine.
@@ -25,8 +26,9 @@ use core::sync::atomic::{AtomicBool, Ordering};
 
 use limine::{
     memmap::{
-        MEMMAP_ACPI_RECLAIMABLE, MEMMAP_BAD_MEMORY, MEMMAP_BOOTLOADER_RECLAIMABLE,
-        MEMMAP_FRAMEBUFFER, MEMMAP_KERNEL_AND_MODULES, MEMMAP_RESERVED, MEMMAP_USABLE,
+        MEMMAP_ACPI_NVS, MEMMAP_ACPI_RECLAIMABLE, MEMMAP_BAD_MEMORY,
+        MEMMAP_BOOTLOADER_RECLAIMABLE, MEMMAP_EXECUTABLE_AND_MODULES,
+        MEMMAP_FRAMEBUFFER, MEMMAP_RESERVED, MEMMAP_USABLE,
     },
     request::{
         BootloaderInfoRequest, ExecutableAddressRequest, FramebufferRequest, HhdmRequest,
@@ -112,7 +114,8 @@ pub enum MemoryRegionType {
     Usable,
     BootloaderReclaimable,
     AcpiReclaimable,
-    KernelAndModules,
+    AcpiNvs,
+    ExecutableAndModules,
     Framebuffer,
     BadMemory,
     Reserved,
@@ -146,10 +149,6 @@ pub struct FramebufferInfo {
     pub bits_per_pixel: u16,
     /// Total byte size of the framebuffer (`height * pitch`).
     pub byte_size:      u64,
-    /// Pixel shift values for red, green, and blue channels, derived from `bits_per_pixel`.
-    pub red_mask_shift: u8,
-    pub green_mask_shift: u8,
-    pub blue_mask_shift: u8,
 }
 
 /// Bootloader name and version copied into fixed-size byte arrays.
@@ -268,13 +267,15 @@ impl LimineData {
         for entry in memmap.entries() {
             if region_count >= MAX_REGIONS { break; }
             let region_type = match entry.type_ {
-                t if t == MEMMAP_USABLE                 => MemoryRegionType::Usable,
-                t if t == MEMMAP_BOOTLOADER_RECLAIMABLE => MemoryRegionType::BootloaderReclaimable,
-                t if t == MEMMAP_ACPI_RECLAIMABLE       => MemoryRegionType::AcpiReclaimable,
-                t if t == MEMMAP_KERNEL_AND_MODULES     => MemoryRegionType::KernelAndModules,
-                t if t == MEMMAP_FRAMEBUFFER            => MemoryRegionType::Framebuffer,
-                t if t == MEMMAP_BAD_MEMORY             => MemoryRegionType::BadMemory,
-                _                                       => MemoryRegionType::Reserved,
+                t if t == MEMMAP_USABLE                  => MemoryRegionType::Usable,
+                t if t == MEMMAP_BOOTLOADER_RECLAIMABLE  => MemoryRegionType::BootloaderReclaimable,
+                t if t == MEMMAP_ACPI_RECLAIMABLE        => MemoryRegionType::AcpiReclaimable,
+                t if t == MEMMAP_ACPI_NVS                => MemoryRegionType::AcpiNvs,
+                t if t == MEMMAP_EXECUTABLE_AND_MODULES  => MemoryRegionType::ExecutableAndModules,
+                t if t == MEMMAP_FRAMEBUFFER             => MemoryRegionType::Framebuffer,
+                t if t == MEMMAP_BAD_MEMORY              => MemoryRegionType::BadMemory,
+                // MEMMAP_RESERVED and MEMMAP_MAPPED_RESERVED both fall here.
+                _                                        => MemoryRegionType::Reserved,
             };
             regions[region_count] = MemoryRegion {
                 base:   entry.base,
@@ -299,9 +300,6 @@ impl LimineData {
                     height:         fb.height,
                     pitch:          fb.pitch,
                     bits_per_pixel: fb.bpp,
-                    red_mask_shift: fb.red_mask_shift,
-                    green_mask_shift: fb.green_mask_shift,
-                    blue_mask_shift: fb.blue_mask_shift,
                     byte_size,
                 }
             });

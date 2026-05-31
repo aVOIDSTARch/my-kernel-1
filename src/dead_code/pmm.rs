@@ -1,3 +1,4 @@
+// v0.0.2
 use limine::memmap::{Entry, MEMMAP_BOOTLOADER_RECLAIMABLE, MEMMAP_USABLE};
 use spin::Mutex;
 

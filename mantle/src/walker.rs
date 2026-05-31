@@ -1,3 +1,4 @@
+// v0.0.2
 use bitwise::paging::{pte_encode, pte_is_huge, pte_is_present, pte_phys_addr, pte_flags, vaddr_pt_index};
 use crate::{prot::Protection, table::PageTable};
 

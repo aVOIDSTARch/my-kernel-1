@@ -1,3 +1,4 @@
+// v0.0.2
 use core::sync::atomic::{AtomicU64, Ordering};
 
 static COUNTERS: [AtomicU64; 256] = {

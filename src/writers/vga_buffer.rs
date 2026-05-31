@@ -1,3 +1,4 @@
+// v0.0.2
 use volatile::Volatile;
 use core::fmt;
 use core::sync::atomic::{AtomicU64, Ordering};

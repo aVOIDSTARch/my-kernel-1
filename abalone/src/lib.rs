@@ -1,3 +1,4 @@
+// v0.0.2
 //! abalone — bare-metal x86_64 allocator library for the crusty_os workspace.
 //!
 //! Provides the full allocator stack used by `crusty_os`:

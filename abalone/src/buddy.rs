@@ -1,3 +1,4 @@
+// v0.0.2
 //! Binary buddy allocator for x86_64 bare-metal.
 //!
 //! Manages a contiguous address space (physical or virtual) as a binary buddy

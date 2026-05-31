@@ -1,3 +1,4 @@
+// v0.0.2
 //! Typed slab allocator backed by the buddy allocator.
 //!
 //! A `SlabCache<T>` holds a collection of slabs, where each slab is a single

@@ -1,3 +1,4 @@
+// v0.0.2
 // Every vector number lives here. No other file uses raw numeric literals
 // for vectors — they import from this module.
 
