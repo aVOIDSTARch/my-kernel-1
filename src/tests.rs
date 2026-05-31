@@ -1,4 +1,4 @@
-// v0.0.2
+// v0.0.3
 // Kernel-level tests for mantle and abalone types.
 // These run in QEMU via the kernel's custom test runner after full
 // kernel initialization (heap, VMM, and timer are all up).
@@ -59,9 +59,8 @@ struct AlignedPage([u8; 4096]);
 static mut PAGE_TABLE_MEM: AlignedPage = AlignedPage([0u8; 4096]);
 
 fn test_page_table() -> &'static mut PageTable {
-    // Safety: tests run sequentially on a single thread; no other code references
-    // this static after kernel_main has finished initialization.
-    unsafe { &mut *(PAGE_TABLE_MEM.0.as_mut_ptr() as *mut PageTable) }
+    // Safety: tests run sequentially; PAGE_TABLE_MEM is not aliased elsewhere.
+    unsafe { &mut *core::ptr::addr_of_mut!(PAGE_TABLE_MEM.0).cast::<PageTable>() }
 }
 
 #[test_case]
@@ -108,7 +107,7 @@ static mut TLSF_MEM: TlsfBuf = TlsfBuf([0u8; TLSF_POOL]);
 fn fresh_tlsf() -> TlsfAllocator {
     let alloc = TlsfAllocator::new();
     // Safety: TLSF_MEM is not aliased by any other allocator; tests run sequentially.
-    unsafe { alloc.init_from_ptr(TLSF_MEM.0.as_mut_ptr(), TLSF_POOL); }
+    unsafe { alloc.init_from_ptr(core::ptr::addr_of_mut!(TLSF_MEM.0).cast(), TLSF_POOL); }
     alloc
 }
 
@@ -160,29 +159,27 @@ fn tlsf_dealloc_and_realloc_succeeds() {
 }
 
 // ── abalone::slab::SlabCache ─────────────────────────────────────────────────
-// Slab tests run after heap::init, so the buddy allocator is available.
+// Slab tests run after heap::init, so the buddy allocator is seeded and ready.
+// SlabCache::new(order) takes a buddy order for slab backing pages.
+// SlabCache::alloc() returns Option<NonNull<T>>; dealloc(NonNull<T>) is unsafe.
 
 use abalone::slab::SlabCache;
 
 #[test_case]
 fn slab_alloc_returns_valid_pointer() {
-    let mut cache: SlabCache<u64> = SlabCache::new();
-    let ptr = cache.alloc();
-    assert!(!ptr.is_null(), "SlabCache::alloc must return non-null");
-    // Write and read back to confirm the pointer is usable.
-    unsafe { ptr.write(0xCAFE_BABE_DEAD_BEEF) };
-    assert_eq!(unsafe { ptr.read() }, 0xCAFE_BABE_DEAD_BEEF);
+    let cache: SlabCache<u64> = SlabCache::new(0);
+    let ptr = cache.alloc().expect("SlabCache::alloc must return Some");
+    unsafe { ptr.as_ptr().write(0xCAFE_BABE_DEAD_BEEF) };
+    assert_eq!(unsafe { ptr.as_ptr().read() }, 0xCAFE_BABE_DEAD_BEEF);
     unsafe { cache.dealloc(ptr) };
 }
 
 #[test_case]
 fn slab_two_allocs_do_not_overlap() {
-    let mut cache: SlabCache<[u8; 32]> = SlabCache::new();
-    let p0 = cache.alloc();
-    let p1 = cache.alloc();
-    assert!(!p0.is_null());
-    assert!(!p1.is_null());
-    let diff = (p0 as isize - p1 as isize).unsigned_abs();
+    let cache: SlabCache<[u8; 32]> = SlabCache::new(0);
+    let p0 = cache.alloc().expect("first slab alloc");
+    let p1 = cache.alloc().expect("second slab alloc");
+    let diff = (p0.as_ptr() as isize - p1.as_ptr() as isize).unsigned_abs();
     assert!(diff >= 32, "slab allocations overlap");
     unsafe {
         cache.dealloc(p0);
@@ -192,11 +189,9 @@ fn slab_two_allocs_do_not_overlap() {
 
 #[test_case]
 fn slab_dealloc_and_realloc_succeeds() {
-    let mut cache: SlabCache<u32> = SlabCache::new();
-    let p0 = cache.alloc();
-    assert!(!p0.is_null());
+    let cache: SlabCache<u32> = SlabCache::new(0);
+    let p0 = cache.alloc().expect("first slab alloc");
     unsafe { cache.dealloc(p0) };
-    let p1 = cache.alloc();
-    assert!(!p1.is_null(), "alloc after dealloc must succeed");
+    let p1 = cache.alloc().expect("alloc after dealloc must succeed");
     unsafe { cache.dealloc(p1) };
 }
