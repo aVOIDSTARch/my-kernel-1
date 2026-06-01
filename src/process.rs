@@ -14,7 +14,7 @@ use spin::Once;
 use core::ptr::NonNull;
 
 use crate::arch::X86IrqControl;
-use crate::slab::SlabCache;
+use abalone::slab::SlabCache;
 use seastar::{
     Process,
     table::{Allocator, ProcessTable},
@@ -26,7 +26,7 @@ use seastar::{
 // This fires a compile error (not a runtime panic) if Process is too small
 // or over-aligned for the slab allocator. The constant is never read;
 // its evaluation is the check.
-const _: () = crate::slab::assert_slab_compatible::<Process>();
+const _: () = abalone::slab::assert_slab_compatible::<Process>();
 
 // ── SlabBacked allocator ──────────────────────────────────────────────────────
 
@@ -61,7 +61,7 @@ pub fn init() {
         // If Process grows large enough that fewer than 2 instances fit in
         // 4 KiB, increase to slab_order = 1 (8 KiB slabs).
         // The compile-time guard above will not catch this case automatically;
-        // monitor slab utilisation if Process gains large fields.
+        // monitor slab utilization if Process gains large fields.
         ProcessTable::new(SlabBacked(SlabCache::new(0)))
     });
 }
