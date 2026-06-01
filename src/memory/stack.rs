@@ -1,4 +1,4 @@
-// v0.0.3
+// v0.0.4
 use abalone::buddy::BUDDY;
 use crate::memory::vmm;
 
@@ -43,4 +43,20 @@ pub unsafe fn alloc_kernel_stack(min_pages: usize) -> KernelStack {
     let stack_top  = base_virt + (total_pages as u64) * 0x1000;
 
     KernelStack { top: stack_top, guard_virt }
+}
+
+/// Switch to `new_sp` and call `entry()`. Does not return.
+///
+/// # Safety
+/// `new_sp` must be a valid, writable stack top. `entry` must not return.
+pub unsafe fn switch_stack(new_sp: u64, entry: fn() -> !) -> ! {
+    unsafe {
+        core::arch::asm!(
+            "mov rsp, {sp}",
+            "call {f}",
+            sp = in(reg) new_sp,
+            f  = in(reg) entry as u64,
+            options(noreturn),
+        );
+    }
 }

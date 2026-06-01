@@ -1,4 +1,4 @@
-// v0.0.6
+// v0.0.7
 #![no_std]
 #![no_main]
 #![feature(abi_x86_interrupt)]
@@ -13,12 +13,14 @@ mod limine_data;
 mod memory;
 mod panic;
 mod testing;
+pub mod post_stack_state;
 #[cfg(test)]
 mod tests;
 mod timer;
 mod writers;
 
 use limine_data::LimineData;
+use post_stack_state::PostStackState;
 
 // ── Entry Point ───────────────────────────────────────────────────────────────
 // State at entry (guaranteed by Limine):
@@ -32,13 +34,8 @@ use limine_data::LimineData;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn kernel_main() -> ! {
-    // Serial needs no memory mapping — safe before anything else.
     serial_println!("[kernel] booting...");
 
-    // ── Step 1: harvest all Limine data into owned plain values ──────────
-    // After this call, no code in this file holds a Limine response pointer.
-    // The request statics in limine_data.rs are private and cannot be
-    // accessed from here even accidentally.
     let boot = unsafe { LimineData::harvest() };
 
     serial_println!("[kernel] hhdm={:#x}", boot.hhdm_offset);
@@ -62,7 +59,6 @@ pub extern "C" fn kernel_main() -> ! {
     serial_println!("[kernel] idt ok");
 
     // ── Step 2.5: PIT timer ───────────────────────────────────────────────
-    // Program before enabling interrupts so the first tick fires at 1 kHz.
     timer::init();
     serial_println!("[kernel] timer ok");
 
@@ -80,8 +76,6 @@ pub extern "C" fn kernel_main() -> ! {
     serial_println!("[kernel] vmm ok");
 
     // ── Step 4.5: LAPIC ───────────────────────────────────────────────────
-    // Map and enable the local APIC so the spurious vector is handled and
-    // the LAPIC is ready for future APIC-timer or IPI use.
     if interrupts::apic::apic_supported() {
         const LAPIC_PHYS: u64 = 0xFEE0_0000;
         const LAPIC_SIZE: u64 = 0x1000;
@@ -97,8 +91,6 @@ pub extern "C" fn kernel_main() -> ! {
     }
 
     // ── Step 5: framebuffer ───────────────────────────────────────────────
-    // Limine does NOT include the framebuffer region in its HHDM mapping.
-    // Map it explicitly before touching the framebuffer address.
     if let Some(fb) = boot.framebuffer {
         serial_println!("[kernel] fb: virt={:#x} phys={:#x} size={:#x}",
             fb.virt_addr, fb.phys_addr, fb.byte_size);
@@ -113,18 +105,44 @@ pub extern "C" fn kernel_main() -> ! {
         serial_println!("[kernel] fb init ok");
     }
 
-    // ── Step 6: release bootloader-reclaimable pages into the buddy ───────
-    // Safety: VMM is up, all Limine response data has been consumed into
-    // `boot`'s owned fields. No pointer into reclaimable memory is live.
+    // ── Step 6: allocate permanent kernel stack with guard page ──────────
+    // Must happen before release() so the new stack pages come from Usable
+    // memory, not from the reclaimable pool we are about to free.
+    let kstack = unsafe { memory::stack::alloc_kernel_stack(8) };
+    serial_println!("[kernel] stack: top={:#x} guard={:#x}",
+        kstack.top, kstack.guard_virt);
+
+    // ── Step 7: transfer state across the stack boundary, then switch ─────
+    // boot.release() runs from kernel_main_continue on the new stack,
+    // so RSP is in Usable memory when reclaimable pages are fed to the buddy.
+    post_stack_state::store(PostStackState {
+        rsdp_phys: boot.rsdp_phys,
+        boot,
+    });
+    unsafe { memory::stack::switch_stack(kstack.top, kernel_main_continue) }
+}
+
+// ── Post-stack-switch entry point ─────────────────────────────────────────────
+// Runs on the buddy-allocated kernel stack. The Limine boot stack is
+// abandoned and will be reclaimed along with the rest of BootloaderReclaimable.
+
+fn kernel_main_continue() -> ! {
+    let PostStackState { rsdp_phys, boot } = post_stack_state::take();
+
+    // RSP is now in Usable memory; no Limine pointer is live.
+    // Release all reclaimable pages, including the former boot stack region.
     unsafe { boot.release() };
     serial_println!("[kernel] boot pages released");
 
-    // ── Kernel is fully initialized ───────────────────────────────────────
     println!("my-kernel booting...");
     println!("heap: ok  vmm: ok");
 
     x86_64::instructions::interrupts::enable();
     println!("interrupts: enabled");
+
+    if let Some(addr) = rsdp_phys {
+        serial_println!("[kernel] rsdp: phys={:#x}", addr);
+    }
 
     #[cfg(test)]
     test_main();

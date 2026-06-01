@@ -1,4 +1,4 @@
-// v0.0.11
+// v0.0.12
 //! Limine boot protocol data harvesting.
 //!
 //! This module is the **sole** point of contact between the kernel and Limine.
@@ -378,16 +378,6 @@ impl LimineData {
     /// design of this module — no Limine pointer escapes `harvest`.
     pub unsafe fn release(self) {
         let hhdm_offset = self.hhdm_offset;
-
-        // Read the current stack pointer. Any reclaimable page at or below
-        // this address is live stack memory and must not be freed.
-        let current_sp: u64;
-        unsafe {
-            core::arch::asm!("mov {}, rsp", out(reg) current_sp, options(nostack, nomem));
-        }
-        // Convert SP to physical; round down to page boundary.
-        let sp_phys_page = (current_sp - hhdm_offset) & !0xFFF;
-
         let mut buddy = BUDDY.lock();
 
         for region in self.reclaimable_regions() {
@@ -395,16 +385,10 @@ impl LimineData {
             let end  = region.aligned_end();
             if base >= end { continue; }
 
-            // Skip the sub-1MiB region. It precedes the buddy's base address
-            // (seeded from Usable regions starting at 0x53000) and contains
-            // real-mode IVT, BDA, EBDA, and ROM shadow — none of which are
-            // safe general-purpose heap memory on x86.
+            // Skip the sub-1 MiB region: precedes the buddy's base address
+            // (seeded from Usable regions starting at ~0x53000) and contains
+            // real-mode IVT, BDA, EBDA, and ROM shadow.
             if base < 0x100000 {
-                continue;
-            }
-
-            // Skip any region containing the current stack pointer (see prior fix).
-            if sp_phys_page >= base && sp_phys_page < end {
                 continue;
             }
 
