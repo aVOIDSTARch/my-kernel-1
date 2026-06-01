@@ -9,7 +9,7 @@ and CR3 points to kernel-owned page table frames.
 | Phase | Status |
 |---|---|
 | Phase 1 — new kernel stack | **COMPLETE** |
-| Phase 2 — new kernel PML4 | **Stub only** — `mantle/src/pml4.rs` exists but helpers unimplemented; not wired to `lib.rs` or called from `main.rs` |
+| Phase 2 — new kernel PML4 | **COMPLETE** |
 | Phase 3 — remove workarounds | Not started |
 
 **Outstanding correctness gap:** `boot.release()` is called before `alloc_kernel_stack`,
