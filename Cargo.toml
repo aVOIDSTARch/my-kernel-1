@@ -20,10 +20,12 @@ test-timeout = 300
 abalone   = { path = "abalone" }
 bitwise   = { path = "bitwise" }
 mantle    = { path = "mantle" }
+seastar    = { path = "seastar" }
+pincer = { path = "pincer", features = ["starvation_protection"] }
 limine    = "0.6.3"
 x86_64    = "0.15"
 pic8259   = "0.10"
-spin      = "0.9"
+spin      = "0.9.8"
 lazy_static = { version = "1.4", features = ["spin_no_std"] }
 pc-keyboard = "0.9"
 uart_16550  = "0.3"

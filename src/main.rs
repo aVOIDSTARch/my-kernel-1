@@ -1,4 +1,4 @@
-// v0.0.8
+// v0.0.9
 #![no_std]
 #![no_main]
 #![feature(abi_x86_interrupt)]
@@ -7,6 +7,8 @@
 #![reexport_test_harness_main = "test_main"]
 extern crate alloc;
 
+
+// Modules/ Submodules are in separate files for better organization and readability.
 mod gdt;
 mod interrupts;
 mod limine_data;
@@ -14,6 +16,10 @@ mod memory;
 mod panic;
 mod testing;
 pub mod post_stack_state;
+mod arch;
+mod process;
+
+// Testing modules
 #[cfg(test)]
 mod tests;
 mod timer;
@@ -71,6 +77,10 @@ pub extern "C" fn kernel_main() -> ! {
     );
     serial_println!("[kernel] heap ok");
 
+    // -- New Step 4: Process Subsystem (before VMM to ensure it can use the heap) ───────────────────────
+    process::init();
+    serial_println!("[kernel] process table ok");
+
     // ── Step 4: VMM ───────────────────────────────────────────────────────
     memory::vmm::init(boot.hhdm_offset);
     serial_println!("[kernel] vmm ok");
@@ -97,7 +107,7 @@ pub extern "C" fn kernel_main() -> ! {
         unsafe {
             memory::vmm::get()
                 .map_mmio(fb.virt_addr, fb.phys_addr, fb.byte_size,
-                          mantle::prot::Protection::MMIO_WC)
+                            mantle::prot::Protection::MMIO_WC)
                 .expect("fb MMIO map failed");
         }
         serial_println!("[kernel] fb mapped");

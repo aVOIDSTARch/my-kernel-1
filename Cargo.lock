@@ -7,7 +7,7 @@ name = "abalone"
 version = "0.1.0"
 dependencies = [
  "bitwise",
- "spin",
+ "spin 0.9.8",
 ]
 
 [[package]]
@@ -44,7 +44,7 @@ version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
 dependencies = [
- "spin",
+ "spin 0.9.8",
 ]
 
 [[package]]
@@ -81,7 +81,9 @@ dependencies = [
  "mantle",
  "pc-keyboard",
  "pic8259",
- "spin",
+ "pincer",
+ "seastar",
+ "spin 0.9.8",
  "uart_16550",
  "volatile 0.2.7",
  "x86_64 0.15.4",
@@ -101,6 +103,10 @@ checksum = "cb844b5b01db1e0b17938685738f113bfc903846f18932b378bc0eabfa40e194"
 dependencies = [
  "x86_64 0.14.13",
 ]
+
+[[package]]
+name = "pincer"
+version = "0.1.0"
 
 [[package]]
 name = "raw-cpuid"
@@ -124,10 +130,28 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
 
 [[package]]
+name = "seastar"
+version = "0.1.0"
+dependencies = [
+ "bitflags 2.11.1",
+ "pincer",
+ "spin 0.12.0",
+]
+
+[[package]]
 name = "spin"
 version = "0.9.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6980e8d7511241f8acf4aebddbb1ff938df5eebe98691418c4468d0b72a96a67"
+dependencies = [
+ "lock_api",
+]
+
+[[package]]
+name = "spin"
+version = "0.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1527984ca054dfca79333baec451042863f485fbee01b7bf6d911de915cac865"
 dependencies = [
  "lock_api",
 ]
