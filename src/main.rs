@@ -1,4 +1,4 @@
-// v0.0.7
+// v0.0.8
 #![no_std]
 #![no_main]
 #![feature(abi_x86_interrupt)]
@@ -51,7 +51,7 @@ pub extern "C" fn kernel_main() -> ! {
             region.base, region.length, region.region_type);
     }
 
-    // ── Step 2: GDT and IDT (static structures, no heap required) ────────
+    // ── Step 2: GDT and IDT ──────────────────────────────────────────────
     gdt::init();
     serial_println!("[kernel] gdt ok");
 
@@ -62,7 +62,7 @@ pub extern "C" fn kernel_main() -> ! {
     timer::init();
     serial_println!("[kernel] timer ok");
 
-    // ── Step 3: heap (buddy seeded from usable regions, TLSF on top) ─────
+    // ── Step 3: heap ──────────────────────────────────────────────────────
     memory::heap::init(
         boot.regions(),
         boot.kernel_phys_start,
@@ -105,34 +105,62 @@ pub extern "C" fn kernel_main() -> ! {
         serial_println!("[kernel] fb init ok");
     }
 
-    // ── Step 6: allocate permanent kernel stack with guard page ──────────
-    // Must happen before release() so the new stack pages come from Usable
-    // memory, not from the reclaimable pool we are about to free.
+    // ── Step 5.5: identify the boot stack reclaimable region ─────────────
+    // release() skips the region whose physical range contains RSP (SP guard).
+    // Capture that range now so kernel_main_continue can add it to the buddy
+    // after we are running on the new Usable-memory stack.
+    let boot_stack_region: Option<(u64, usize)> = {
+        let current_sp: u64;
+        unsafe {
+            core::arch::asm!("mov {}, rsp", out(reg) current_sp, options(nostack, nomem));
+        }
+        let hhdm = boot.hhdm_offset;
+        let sp_phys = (current_sp - hhdm) & !0xFFF;
+        boot.reclaimable_regions()
+            .find(|r| {
+                let base = r.aligned_base();
+                let end  = r.aligned_end();
+                base >= 0x100000 && base < end && sp_phys >= base && sp_phys < end
+            })
+            .and_then(|r| {
+                let base  = r.aligned_base();
+                let end   = r.aligned_end();
+                let pages = ((end - base) / 4096) as usize;
+                if pages > 0 { Some((hhdm + base, pages)) } else { None }
+            })
+    };
+
+    let rsdp_phys = boot.rsdp_phys;
+
+    // ── Step 6: release reclaimable pages (SP guard skips boot stack) ────
+    unsafe { boot.release() };
+    serial_println!("[kernel] boot pages released (boot stack region deferred)");
+
+    // ── Step 7: allocate permanent kernel stack with guard page ──────────
     let kstack = unsafe { memory::stack::alloc_kernel_stack(8) };
     serial_println!("[kernel] stack: top={:#x} guard={:#x}",
         kstack.top, kstack.guard_virt);
 
-    // ── Step 7: transfer state across the stack boundary, then switch ─────
-    // boot.release() runs from kernel_main_continue on the new stack,
-    // so RSP is in Usable memory when reclaimable pages are fed to the buddy.
+    // ── Step 8: store state and switch to permanent kernel stack ──────────
     post_stack_state::store(PostStackState {
-        rsdp_phys: boot.rsdp_phys,
-        boot,
+        rsdp_phys,
+        boot_stack_region,
     });
     unsafe { memory::stack::switch_stack(kstack.top, kernel_main_continue) }
 }
 
 // ── Post-stack-switch entry point ─────────────────────────────────────────────
-// Runs on the buddy-allocated kernel stack. The Limine boot stack is
-// abandoned and will be reclaimed along with the rest of BootloaderReclaimable.
 
 fn kernel_main_continue() -> ! {
-    let PostStackState { rsdp_phys, boot } = post_stack_state::take();
+    let PostStackState { rsdp_phys, boot_stack_region } = post_stack_state::take();
 
-    // RSP is now in Usable memory; no Limine pointer is live.
-    // Release all reclaimable pages, including the former boot stack region.
-    unsafe { boot.release() };
-    serial_println!("[kernel] boot pages released");
+    // RSP is now in Usable memory; the former boot stack pages are safe to free.
+    if let Some((virt_base, page_count)) = boot_stack_region {
+        let mut buddy = abalone::buddy::BUDDY.lock();
+        unsafe { buddy.add_region(virt_base as usize, page_count); }
+        serial_println!("[kernel] boot stack pages released: base={:#x} pages={}",
+            virt_base, page_count);
+    }
 
     println!("my-kernel booting...");
     println!("heap: ok  vmm: ok");

@@ -1,4 +1,4 @@
-// v0.1.1
+// v0.1.2
 //! Global state cell for data that must survive the kernel stack switch.
 //!
 //! `kernel_main` runs on the Limine-provided boot stack. After memory
@@ -41,21 +41,19 @@
 
 use core::sync::atomic::{AtomicBool, Ordering};
 use spin::Mutex;
-use crate::limine_data::LimineData;
 
 // ── PostStackState ────────────────────────────────────────────────────────────
 
 /// Data carried from the pre-switch half of `kernel_main` to
 /// `kernel_main_continue`.
 ///
-/// All fields are plain integers or owned values with no stack references.
+/// All fields are plain integers — no pointers into old stack frames.
 pub struct PostStackState {
     /// Physical address of the ACPI RSDP table, if Limine provided one.
-    /// Physical address of the ACPI RSDP table, if Limine provided one.
     pub rsdp_phys: Option<u64>,
-    /// Full boot data carried across the switch so `kernel_main_continue`
-    /// can call `boot.release()` while running on the new Usable-memory stack.
-    pub boot: LimineData,
+    /// Reclaimable region skipped by `release()` because it held the boot RSP.
+    /// Stored as `(hhdm_virt_base, page_count)`. Added to buddy after switch.
+    pub boot_stack_region: Option<(u64, usize)>,
 }
 
 // SAFETY: all fields are plain integers. No thread actually runs concurrently
