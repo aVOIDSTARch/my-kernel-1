@@ -12,12 +12,9 @@ and CR3 points to kernel-owned page table frames.
 | Phase 2 — new kernel PML4 | **COMPLETE** |
 | Phase 3 — remove workarounds | Not started |
 
-**Outstanding correctness gap:** `boot.release()` is called before `alloc_kernel_stack`,
-so Limine's PT frames enter the buddy before CR3 is updated. If a subsequent buddy
-allocation (e.g., the PT frame allocated inside `unmap()` for the guard page) happens
-to land on a former Limine PT frame, the live page tables are silently corrupted.
-Installing the kernel PML4 before `boot.release()` closes this gap. Phase 2 is the
-immediate priority.
+**All correctness gaps closed.** CR3 points to kernel-owned frames. Limine's PT frames
+only enter the buddy after the PML4 switch. All `BootloaderReclaimable` pages including
+the 189-page boot stack region are fully reclaimed. Phase 3 (cleanup) is optional.
 
 ---
 
@@ -78,7 +75,7 @@ needed because `release()` is called on the Limine stack. It must be removed (or
 
 ---
 
-## Phase 2 — Build and Install a Kernel-Owned PML4 [NEXT]
+## Phase 2 — Build and Install a Kernel-Owned PML4 [COMPLETE]
 
 ### 2.1 Why this is needed
 
@@ -261,6 +258,7 @@ x86_64::instructions::interrupts::enable();
 
 ### 2.7 Updated `kernel_main` sequence
 
+
 The call order must be: **PML4 install → `boot.release()` → stack switch**.
 Installing before release ensures CR3 never points to frames that the buddy
 could re-allocate. The current code has `release()` before stack allocation;
@@ -343,9 +341,10 @@ Once Phases 1 and 2 are complete:
 | `src/memory/stack.rs` | 1 | Done | `alloc_kernel_stack`, `switch_stack` |
 | `src/post_stack_state.rs` | 1 | Done | `PostStackState` cell for cross-switch data |
 | `src/main.rs` | 1 | Done | `kernel_main` + `kernel_main_continue` split; boot stack capture |
-| `mantle/src/pml4.rs` | 2 | Stub | Add `alloc_zero_frame`, `descend_or_create`, `map_hhdm_2m`, `map_range_4k` |
-| `mantle/src/lib.rs` | 2 | Todo | Add `pub mod pml4` |
-| `src/main.rs` | 2 | Todo | Insert PML4 install step before `boot.release()` |
+| `mantle/src/pml4.rs` | 2 | Done | `alloc_zero_frame`, `descend_or_create`, `map_hhdm_2m`, `map_range_4k` |
+| `mantle/src/prot.rs` | 2 | Done | Add `KERNEL_RWX_BOOT` constant |
+| `mantle/src/lib.rs` | 2 | Done | `pub mod pml4` added |
+| `src/main.rs` | 2 | Done | Stack alloc → PML4 install → release → stack switch |
 | `src/limine_data.rs` | 3 | Todo | Remove SP guard; update `release()` doc comment |
 | `abalone/src/buddy.rs` | 3 | Optional | Lower-base extension for sub-1 MiB region |
 
