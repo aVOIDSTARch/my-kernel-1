@@ -1,4 +1,4 @@
-// v0.0.9
+// v0.1.1
 #![no_std]
 #![no_main]
 #![feature(abi_x86_interrupt)]
@@ -142,16 +142,37 @@ pub extern "C" fn kernel_main() -> ! {
 
     let rsdp_phys = boot.rsdp_phys;
 
-    // ── Step 6: release reclaimable pages (SP guard skips boot stack) ────
-    unsafe { boot.release() };
-    serial_println!("[kernel] boot pages released (boot stack region deferred)");
-
-    // ── Step 7: allocate permanent kernel stack with guard page ──────────
+    // ── Step 6: allocate permanent kernel stack ───────────────────────────
+    // Done before PML4 install so the guard-page unmap runs under Limine's
+    // 4 KiB leaf PTEs (where the entry to zero actually exists).
     let kstack = unsafe { memory::stack::alloc_kernel_stack(8) };
     serial_println!("[kernel] stack: top={:#x} guard={:#x}",
         kstack.top, kstack.guard_virt);
 
-    // ── Step 8: store state and switch to permanent kernel stack ──────────
+    // ── Step 7: build and install kernel-owned PML4 ───────────────────────
+    // Must happen before release() so Limine's PT frames only enter the buddy
+    // after CR3 no longer points to them.
+    // phys_mem_size is the highest byte address in the memory map; map_hhdm_2m
+    // rounds it up to the next 2 MiB boundary internally.
+    let phys_mem_size = boot.regions().iter().map(|r| r.end()).max().unwrap_or(0);
+    unsafe {
+        mantle::pml4::install_kernel_pml4(
+            boot.hhdm_offset,
+            boot.kernel_virt_start,
+            boot.kernel_virt_end,
+            boot.kernel_phys_start,
+            phys_mem_size,
+        );
+    }
+    serial_println!("[kernel] pml4 ok");
+
+    // ── Step 8: release reclaimable pages (SP guard skips boot stack) ────
+    // CR3 now points to kernel-owned frames; Limine's PT frames are safe to
+    // reclaim. SP guard still needed — RSP is still on the Limine boot stack.
+    unsafe { boot.release() };
+    serial_println!("[kernel] boot pages released (boot stack region deferred)");
+
+    // ── Step 9: store state and switch to permanent kernel stack ──────────
     post_stack_state::store(PostStackState {
         rsdp_phys,
         boot_stack_region,

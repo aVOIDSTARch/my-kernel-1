@@ -1,4 +1,4 @@
-// v0.0.4
+// v0.0.6
 use bitwise::paging::pte_flags;
 
 /// Page protection flags for a kernel mapping.
@@ -17,6 +17,15 @@ impl Protection {
 
     /// Read-execute kernel code. Executable (NX clear), not writable. Global.
     pub const KERNEL_RX: Self = Self(pte_flags::GLOBAL);
+
+    /// Read-write-execute mapping for the kernel image during early boot.
+    ///
+    /// W^X is not enforced — code and data sections share one mapping.
+    /// Replace with per-section `KERNEL_RX`/`KERNEL_RW` mappings once the
+    /// kernel builds its own page tables with section-boundary knowledge.
+    /// Unlike the deprecated `KERNEL_RWX`, this variant sets `GLOBAL` so the
+    /// mapping survives CR3 reloads without a TLB flush.
+    pub const KERNEL_RWX_BOOT: Self = Self(pte_flags::WRITABLE | pte_flags::GLOBAL);
 
     /// Read-write-execute. Use only during early boot; remove once code is loaded.
     #[deprecated = "W^X violation. Use KERNEL_RX for code or KERNEL_RW for data. \

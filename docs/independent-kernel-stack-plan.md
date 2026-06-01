@@ -1,16 +1,23 @@
 # Independent Kernel Stack Plan
 
-**Goal:** Complete independence from Limine-owned memory before `boot.release()`
-is called, so that every `BootloaderReclaimable` page — including the 756 KiB
-region `0x1ff23000..0x1ffe0000` currently containing the live boot stack — can
-be returned to the buddy without restriction.
+**Goal:** Complete independence from Limine-owned memory, so that every
+`BootloaderReclaimable` page can be returned to the buddy without restriction,
+and CR3 points to kernel-owned page table frames.
 
-**Current state (commit `06afb97`):** The kernel boots cleanly. Two
-`BootloaderReclaimable` regions are permanently skipped in `release()`: the
-sub-1 MiB BDA region (not viable regardless) and the boot stack region (756 KiB
-of real memory lost). The skip is implemented by reading RSP and comparing
-against region boundaries. Once the kernel runs on its own stack, the SP guard
-can be removed and the full region reclaimed.
+**Current state (as of commit `61341a6`):**
+
+| Phase | Status |
+|---|---|
+| Phase 1 — new kernel stack | **COMPLETE** |
+| Phase 2 — new kernel PML4 | **Stub only** — `mantle/src/pml4.rs` exists but helpers unimplemented; not wired to `lib.rs` or called from `main.rs` |
+| Phase 3 — remove workarounds | Not started |
+
+**Outstanding correctness gap:** `boot.release()` is called before `alloc_kernel_stack`,
+so Limine's PT frames enter the buddy before CR3 is updated. If a subsequent buddy
+allocation (e.g., the PT frame allocated inside `unmap()` for the guard page) happens
+to land on a former Limine PT frame, the live page tables are silently corrupted.
+Installing the kernel PML4 before `boot.release()` closes this gap. Phase 2 is the
+immediate priority.
 
 ---
 
@@ -39,217 +46,54 @@ be validated in isolation; building the PML4 depends on a stable stack.
 
 ---
 
-## Phase 1 — Allocate and Switch to a Kernel Stack
+## Phase 1 — Allocate and Switch to a Kernel Stack [COMPLETE]
 
-### 1.1 What the new stack needs
+### What was implemented
 
-- Allocated from the buddy (order-0 blocks = 4 KiB each; 4 pages = 16 KiB is
-  the minimum, 8 pages = 32 KiB is comfortable for the current call depth).
-- Physical address in a `Usable` region — the buddy at this point only contains
-  `Usable` pages, so any successful allocation satisfies this.
-- The virtual address is `HHDM + phys` — already mapped by Limine's HHDM.
-  No new mapping is needed for the stack itself.
-- A guard page immediately below the stack: unmap the page at
-  `stack_virt_base - 0x1000` so a stack overflow faults with CR2 pointing
-  at the guard rather than silently corrupting the adjacent allocation.
+**Implementation in `src/memory/stack.rs` and `src/post_stack_state.rs`.**
 
-### 1.2 Where to implement it
+The actual approach differs from the original plan in one key respect: `boot.release()`
+is called *before* the stack switch (with the SP guard still active in `release()`),
+not after. The boot stack region is captured into `PostStackState` before the switch
+and manually added to the buddy via `buddy.add_region()` in `kernel_main_continue`
+after the RSP is already on a `Usable` frame. This avoids threading `LimineData`
+through a `static mut`.
 
-Add `memory::stack` module (`src/memory/stack.rs`) with a single public
-function:
+The guard page uses `vmm::get().unmap()` to zero the leaf PTE in the current (Limine)
+page tables. This is safe when done before the PML4 switch, because Limine's tables
+are still live and mapped at this point.
 
-```rust
-/// Allocate `pages` pages from the buddy as a kernel stack.
-///
-/// Returns the virtual address of the **top** of the stack (highest address,
-/// since x86 stacks grow downward) and the virtual address of the stack base
-/// (for guard page installation).
-///
-/// # Safety
-/// The buddy must be initialized and contain at least `pages + 1` free pages
-/// (the extra page is the guard).
-pub unsafe fn alloc_kernel_stack(pages: usize) -> (u64, u64) {
-    // Allocate pages + 1: bottom page becomes the guard (unmapped).
-    let order = pages.next_power_of_two().trailing_zeros() as usize;
-    // For non-power-of-two page counts, allocate individual pages.
-    // Simple approach: allocate pages one at a time and stack them.
-    // Guard page: allocate one extra order-0 page at the base.
-    let guard_virt = {
-        let ptr = abalone::buddy::alloc_pages(0).expect("stack guard OOM");
-        ptr as u64
-    };
-    let mut stack_top = guard_virt + 0x1000; // guard is below stack
+**SP guard:** The SP guard in `limine_data.rs::release()` remains. It is still
+needed because `release()` is called on the Limine stack. It must be removed (or
+`release()` must be called after the PML4 install) once Phase 2 is complete.
 
-    for _ in 0..pages - 1 {
-        let page = abalone::buddy::alloc_pages(0).expect("stack page OOM");
-        let _ = page; // buddy already gave contiguous pages if lucky;
-                      // for simplicity allocate independently and use highest
-    }
-    // Cleaner: allocate pages+1 as a single order block (requires power-of-two).
-    // See note below.
-    (stack_top + (pages - 1) as u64 * 0x1000, guard_virt)
-}
-```
-
-The cleaner approach is to allocate `(pages + 1)` rounded up to the next power
-of two as a single buddy order block. For 8 stack pages + 1 guard = 9 pages,
-round up to 16 (order-4). The bottom page is the guard; the top of the 15th
-page is the initial SP. The extra frames at the top are wasted but the layout
-is simple and correct.
-
-Concrete implementation in `src/memory/stack.rs`:
-
-```rust
-// v0.0.1
-use abalone::buddy::BUDDY;
-use crate::memory::vmm;
-
-/// Stack allocation result.
-pub struct KernelStack {
-    /// Virtual address of the top of the stack (initial RSP value).
-    pub top:       u64,
-    /// Virtual address of the guard page (the page below the stack base).
-    /// This page is unmapped; writing to it produces a #PF.
-    pub guard_virt: u64,
-}
-
-/// Allocate a kernel stack of at least `min_pages` pages with a guard page.
-///
-/// Allocates `1 << order` pages where `order` is the smallest value such that
-/// `(1 << order) > min_pages`. The first page is left unmapped as a guard;
-/// the remaining pages form the stack.
-///
-/// Returns the virtual stack top (initial RSP) and the guard page address.
-///
-/// # Safety
-/// Buddy and VMM must both be initialized.
-pub unsafe fn alloc_kernel_stack(min_pages: usize) -> KernelStack {
-    // Round up to next power of two so the entire block is one buddy allocation.
-    // min_pages=8 → order=4 (16 pages): 1 guard + 15 stack.
-    let total_order = (min_pages + 1).next_power_of_two().trailing_zeros() as usize;
-    let total_pages = 1usize << total_order;
-
-    let base_virt = {
-        let mut buddy = BUDDY.lock();
-        buddy.alloc_pages(total_order).expect("kernel stack OOM") as u64
-    };
-
-    // Unmap the guard page (bottom of allocation).
-    // Safety: base_virt is HHDM-mapped by Limine; unmapping removes the
-    // Limine leaf PTE. Any write below the stack top will now #PF.
-    unsafe {
-        vmm::get().unmap(base_virt);
-    }
-
-    let guard_virt = base_virt;
-    let stack_top  = base_virt + (total_pages as u64) * 0x1000;
-
-    KernelStack { top: stack_top, guard_virt }
-}
-```
-
-### 1.3 Switching RSP in `kernel_main`
-
-The switch must happen in a naked or carefully controlled context. In Rust
-`no_std` x86_64, the cleanest approach is a small inline `asm!` block:
-
-```rust
-// In kernel_main, immediately after vmm::init() and before boot.release():
-
-let kstack = unsafe { memory::stack::alloc_kernel_stack(8) };
-serial_println!("[kernel] stack: top={:#x} guard={:#x}",
-    kstack.top, kstack.guard_virt);
-
-// Switch RSP to the new stack. After this instruction, the call stack
-// frames built since kernel_main entry are abandoned — this is safe
-// because we do not return from kernel_main and we do not use any
-// variables from the Limine stack afterward.
-//
-// The `call` instruction pushes a return address; `kernel_main_on_new_stack`
-// is a -> ! function so it never returns. The pushed return address is
-// never used.
-unsafe {
-    core::arch::asm!(
-        "mov rsp, {new_sp}",
-        "call {continue_fn}",
-        new_sp   = in(reg) kstack.top,
-        continue_fn = sym kernel_main_continue,
-        options(noreturn),
-    );
-}
-```
-
-`kernel_main_continue` is a separate `extern "C" fn() -> !` that contains
-all code from "release reclaimable pages" onward. The split keeps the unsafe
-`asm!` block minimal. Note: `options(noreturn)` on the `asm!` block tells the
-compiler this path does not return; the function diverges correctly.
-
-Alternatively, use a helper in `src/memory/stack.rs`:
-
-```rust
-/// Switch to `new_sp` and call `entry()`. Does not return.
-///
-/// # Safety
-/// `new_sp` must be a valid, writable stack top. `entry` must not return.
-pub unsafe fn switch_stack(new_sp: u64, entry: fn() -> !) -> ! {
-    unsafe {
-        core::arch::asm!(
-            "mov rsp, {sp}",
-            "call {f}",
-            sp = in(reg) new_sp,
-            f  = in(reg) entry as u64,
-            options(noreturn),
-        );
-    }
-}
-```
-
-### 1.4 Removing the SP guard from `release()`
-
-Once `release()` is called from a stack in `Usable` memory, the guard is no
-longer needed. Remove this block from `limine_data.rs`:
-
-```rust
-// REMOVE after Phase 1:
-if sp_phys_page >= base && sp_phys_page < end {
-    continue;
-}
-```
-
-The `current_sp` read and `sp_phys_page` computation can be removed too,
-cleaning up the function to its original concise form (minus the sub-1 MiB
-filter, which stays permanently).
-
-### 1.5 Verification
-
-After Phase 1, boot log should show:
+**Boot log now shows:**
 
 ```
+[kernel] boot pages released (boot stack region deferred)
 [kernel] stack: top=0xffff800000xxxxxx guard=0xffff800000yyyyyy
-[kernel] boot pages released          ← now releases 0x1ff23000..0x1ffe0000 fully
+...
+[kernel] boot stack pages released: base=0xffff8000xxxxxxxx pages=NNN
 ```
-
-Confirm with a deliberate stack probe: write a recursive function with a large
-stack frame in a `#[test_case]` to verify the guard page fires as a #PF rather
-than a silent corruption.
 
 ---
 
-## Phase 2 — Build and Install a Kernel-Owned PML4
+## Phase 2 — Build and Install a Kernel-Owned PML4 [NEXT]
 
 ### 2.1 Why this is needed
 
-After Phase 1 the kernel stack is independent. But CR3 still points to Limine's
-PML4, whose frame nodes live in `BootloaderReclaimable`. The sub-1 MiB filter
-in `release()` prevents those nodes from being freed, but only by accident —
-`0x1000..0x53000` is skipped because it's below the buddy base, not because the
-kernel actively protects it. The Limine page-table frames at
-`0x1f7dd000..0x1f7e5000` (32 KiB) and portions of `0x1f82d000..0x1ff22000` are
-fed into the buddy by `release()`. Once in the buddy those frames can be
-allocated and written — zeroing a live PT node — without the kernel knowing.
+CR3 still points to Limine's PML4, whose frame nodes live in `BootloaderReclaimable`.
+`boot.release()` feeds those frames into the buddy before the PML4 is switched.
+Once in the buddy, a subsequent allocation (e.g., the guard-page `unmap()` allocating
+an intermediate PT frame) could land on a former Limine PT node and corrupt it while
+the CPU is still walking those same tables on every memory access.
 
-The kernel survives only because it never allocates from those specific frames
-between `release()` and `hlt`. That is luck, not correctness.
+The current boot sequence avoids this by luck: the frames happen not to be re-allocated
+before the guard-page `unmap()` call, and `unmap()` itself does not allocate
+(it only zeroes a leaf PTE). But this is not guaranteed and will break under heap
+pressure or if the boot sequence changes.
+
+Installing the kernel PML4 **before** `boot.release()` makes correctness structural.
 
 ### 2.2 What the new PML4 must map
 
@@ -274,70 +118,89 @@ page-table memory), which is not viable.
 
 ### 2.3 Implementation: `mantle::pml4`
 
-Add `mantle/src/pml4.rs`:
+**`mantle/src/pml4.rs` already exists** (v0.0.2) and contains the
+`install_kernel_pml4` entry point. It is **not yet complete**: the three helper
+functions it calls — `alloc_zero_frame`, `map_hhdm_2m`, and `map_range_4k` — are
+missing. The module is also not declared in `mantle/src/lib.rs`.
+
+**Tasks remaining in `mantle/src/pml4.rs`:**
+
+Add the following helpers (model them on `walker.rs::PageTableWalker` but operate
+on a caller-supplied `pml4_phys` rather than reading CR3):
 
 ```rust
-// v0.0.1
+/// Allocate one order-0 frame from the buddy; return its physical address.
+/// Panics on OOM — called only during early init when OOM is unrecoverable.
+fn alloc_zero_frame(hhdm: u64) -> u64 {
+    let virt = abalone::buddy::alloc_pages(0)
+        .expect("pml4: buddy OOM during page table build") as u64;
+    // Zero the frame so all PTEs start as Not Present.
+    unsafe { core::ptr::write_bytes(virt as *mut u8, 0, 0x1000) };
+    virt - hhdm
+}
 
-use crate::{prot::Protection, table::PageTable};
-use bitwise::paging::{pte_encode, pte_flags, vaddr_pt_index};
-use abalone::buddy::BUDDY;
-
-const PAGE_SIZE:   u64 = 0x1000;
-const HUGE_2M:     u64 = 0x0020_0000;
-const HUGE_1G:     u64 = 0x4000_0000;
-
-/// Build a new PML4 covering all regions the kernel needs, then load it
-/// into CR3, atomically replacing Limine's page tables.
-///
-/// After this returns, CR3 points to kernel-owned frames. All frames used
-/// for the new page tables were sourced from the buddy (`Usable` memory).
-///
-/// # Safety
-/// - Buddy and VMM must be initialized.
-/// - Interrupts should be disabled for the duration (or IDT must be valid
-///   under both old and new page tables, which it is since both map the
-///   kernel image identically).
-/// - Must not be called while running on a stack outside the HHDM.
-pub unsafe fn install_kernel_pml4(
-    hhdm:              u64,
-    kernel_virt_start: u64,
-    kernel_virt_end:   u64,
-    kernel_phys_start: u64,
-    phys_mem_size:     u64,   // upper bound of physical memory to HHDM-map
-    fb_virt:           u64,
-    fb_phys:           u64,
-    fb_pages:          u64,
-) {
-    // Allocate root PML4 frame from buddy.
-    let pml4_phys = alloc_zero_frame(hhdm);
-
-    // 1. Map HHDM using 2 MiB huge pages.
-    map_hhdm_2m(hhdm, pml4_phys, phys_mem_size);
-
-    // 2. Map kernel image (4 KiB pages, correct protection per section).
-    //    For now, map the entire image RWX — split by section in a later pass.
-    map_range_4k(hhdm, pml4_phys,
-        kernel_virt_start, kernel_phys_start,
-        (kernel_virt_end - kernel_virt_start + PAGE_SIZE - 1) / PAGE_SIZE,
-        Protection::KERNEL_RWX_BOOT);
-
-    // 3. Map framebuffer MMIO (WC, already mapped under old tables).
-    map_range_4k(hhdm, pml4_phys,
-        fb_virt, fb_phys, fb_pages, Protection::MMIO_WC);
-
-    // 4. Write CR3 — atomic from the CPU's perspective; TLB is flushed.
-    unsafe {
-        core::arch::asm!(
-            "mov cr3, {pml4}",
-            pml4 = in(reg) pml4_phys,
-            options(nostack, preserves_flags),
-        );
+/// Resolve or create the intermediate page table at `level` for `vaddr`.
+/// Returns the physical address of the next-level table. Panics on OOM.
+unsafe fn descend_or_create(hhdm: u64, table_phys: u64, vaddr: u64, level: u32) -> u64 {
+    let table = (hhdm + table_phys) as *mut PageTable;
+    let idx   = vaddr_pt_index(vaddr, level) as usize;
+    let entry = unsafe { (*table).read(idx) };
+    if pte_is_present(entry) {
+        pte_phys_addr(entry, PAGE_SIZE)
+    } else {
+        let child_phys = alloc_zero_frame(hhdm);
+        let e = pte_encode(child_phys, PAGE_SIZE, pte_flags::PRESENT | pte_flags::WRITABLE);
+        unsafe { (*table).write(idx, e) };
+        child_phys
     }
-    // Execution continues on the new page tables. Limine's PML4 frames are
-    // now unreferenced and safe to free via release().
+}
+
+/// Map `phys_mem_size` bytes of physical memory as HHDM using 2 MiB huge pages.
+fn map_hhdm_2m(hhdm: u64, pml4_phys: u64, phys_mem_size: u64) {
+    let huge_pages = (phys_mem_size + HUGE_2M - 1) / HUGE_2M;
+    for i in 0..huge_pages {
+        let phys = i * HUGE_2M;
+        let virt = hhdm + phys;
+        let pdpt_phys = unsafe { descend_or_create(hhdm, pml4_phys, virt, 4) };
+        let pd_phys   = unsafe { descend_or_create(hhdm, pdpt_phys, virt, 3) };
+        let pd = (hhdm + pd_phys) as *mut PageTable;
+        let idx = vaddr_pt_index(virt, 2) as usize;
+        let pde = pte_encode(
+            phys, HUGE_2M,
+            pte_flags::PRESENT | pte_flags::WRITABLE
+                | pte_flags::NO_EXECUTE | pte_flags::HUGE_PAGE | pte_flags::GLOBAL,
+        );
+        unsafe { (*pd).write(idx, pde) };
+    }
+}
+
+/// Map `pages` contiguous 4 KiB pages: virt_start..+pages*4K -> phys_start..+pages*4K.
+fn map_range_4k(
+    hhdm:       u64,
+    pml4_phys:  u64,
+    virt_start: u64,
+    phys_start: u64,
+    pages:      u64,
+    prot:       Protection,
+) {
+    for i in 0..pages {
+        let virt = virt_start + i * PAGE_SIZE;
+        let phys = phys_start + i * PAGE_SIZE;
+        let pdpt_phys = unsafe { descend_or_create(hhdm, pml4_phys, virt, 4) };
+        let pd_phys   = unsafe { descend_or_create(hhdm, pdpt_phys, virt, 3) };
+        let pt_phys   = unsafe { descend_or_create(hhdm, pd_phys,   virt, 2) };
+        let pt = (hhdm + pt_phys) as *mut PageTable;
+        let idx = vaddr_pt_index(virt, 1) as usize;
+        let leaf = pte_encode(phys, PAGE_SIZE, pte_flags::PRESENT | prot.bits());
+        unsafe { (*pt).write(idx, leaf) };
+    }
 }
 ```
+
+Also add `use bitwise::paging::pte_is_present;` and `use bitwise::paging::pte_phys_addr;`
+to the imports (they are used by `descend_or_create`).
+
+**`mantle/src/lib.rs`:** Add `pub mod pml4;`.
 
 ### 2.4 HHDM mapping with 2 MiB pages
 
@@ -398,51 +261,47 @@ x86_64::instructions::interrupts::enable();
 
 ### 2.7 Updated `kernel_main` sequence
 
+The call order must be: **PML4 install → `boot.release()` → stack switch**.
+Installing before release ensures CR3 never points to frames that the buddy
+could re-allocate. The current code has `release()` before stack allocation;
+that must be corrected.
+
 ```rust
-pub extern "C" fn kernel_main() -> ! {
-    // Steps 1–4 unchanged (harvest, gdt, interrupts, heap, vmm).
+// Step 5.5 (existing): capture boot stack region before release.
 
-    // Step 5: framebuffer mapping (under Limine's page tables, as before).
-
-    // Step 6: NEW — allocate kernel stack.
-    let kstack = unsafe { memory::stack::alloc_kernel_stack(8) };
-    serial_println!("[kernel] kstack top={:#x}", kstack.top);
-
-    // Step 7: NEW — build and install kernel PML4.
-    // Interrupts are still disabled at this point (enabled in old step 6).
-    unsafe {
-        memory::pml4::install_kernel_pml4(
-            boot.hhdm_offset,
-            boot.kernel_virt_start,
-            boot.kernel_virt_end,
-            boot.kernel_phys_start,
-            phys_mem_size,
-            fb_virt, fb_phys, fb_pages,
-        );
-    }
-    serial_println!("[kernel] pml4 ok");
-
-    // Step 8: switch stack (now safe — PML4 maps the new stack via HHDM).
-    unsafe {
-        memory::stack::switch_stack(kstack.top, kernel_main_continue);
-    }
+// Step 5.6: NEW — install kernel PML4.
+// Interrupts are disabled. IDT, IST stacks, and kernel image are all mapped
+// in the new PML4, so any interrupt that fires during the CR3 write is safe.
+let phys_mem_size = boot.regions().iter().map(|r| r.end()).max().unwrap_or(0);
+unsafe {
+    let (fb_virt, fb_phys, fb_pages) = boot.framebuffer
+        .map(|fb| (fb.virt_addr, fb.phys_addr, (fb.byte_size + 0xFFF) / 0x1000))
+        .unwrap_or((0, 0, 0));
+    mantle::pml4::install_kernel_pml4(
+        boot.hhdm_offset,
+        boot.kernel_virt_start,
+        boot.kernel_virt_end,
+        boot.kernel_phys_start,
+        phys_mem_size,
+        fb_virt, fb_phys, fb_pages,
+    );
 }
+serial_println!("[kernel] pml4 ok");
 
-extern "C" fn kernel_main_continue() -> ! {
-    // Step 9: release — now truly safe, no Limine memory is live.
-    unsafe { boot.release() };
-    serial_println!("[kernel] boot pages released");
+// Step 6 (existing, now safe): release reclaimable pages.
+// CR3 no longer points to Limine's PT frames, so they are safe to free.
+unsafe { boot.release() };
 
-    // Steps 10+: enable interrupts, framebuffer println, hlt loop.
-}
+// Step 7 (existing): allocate new kernel stack.
+let kstack = unsafe { memory::stack::alloc_kernel_stack(8) };
+
+// Step 8 (existing): store PostStackState and switch.
+post_stack_state::store(PostStackState { rsdp_phys, boot_stack_region });
+unsafe { memory::stack::switch_stack(kstack.top, kernel_main_continue) };
 ```
 
-Note: `boot` must be passed to `kernel_main_continue`. The cleanest approach
-is a `static mut BOOT_DATA: Option<LimineData>` set before the stack switch,
-consumed immediately in `kernel_main_continue`. Alternatively, restructure
-so `release()` is called from a closure captured in the new stack frame — but
-`switch_stack` must be `fn() -> !`, not a closure, for the `asm!` call to work
-safely. The static is the pragmatic choice.
+After this change, the SP guard in `release()` is still needed (RSP is still on
+the Limine stack when `release()` is called). Phase 3 removes it.
 
 ---
 
@@ -450,8 +309,16 @@ safely. The static is the pragmatic choice.
 
 Once Phases 1 and 2 are complete:
 
-1. **Remove the SP guard from `release()`** (per Phase 1.4). The
-   `0x1ff23000..0x1ffe0000` region (756 KiB) is now freely reclaimable.
+1. **Remove the SP guard from `release()`** in `limine_data.rs`. The block:
+
+   ```rust
+   if sp_phys_page >= base && sp_phys_page < end { continue; }
+   ```
+
+   and the two lines above it (`current_sp` read + `sp_phys_page` computation)
+   become dead code once the kernel PML4 is installed before `release()` is called.
+   The boot stack region is still captured explicitly via `boot_stack_region` and
+   added to the buddy in `kernel_main_continue`, so reclamation is unaffected.
 
 2. **Consider removing the sub-1 MiB filter.** The region `0x1000..0x53000`
    starts below the buddy base (`0xffff800000053000`). This is a constraint of
@@ -464,23 +331,23 @@ Once Phases 1 and 2 are complete:
    - This is an `abalone` issue, not a `limine_data` issue. File it there.
 
 3. **Update `release()` doc comment** to accurately reflect that the safety
-   invariant is now: "no register or stack frame points into a
-   BootloaderReclaimable page" — which is enforced structurally rather than by
-   the SP runtime check.
+   invariant is now: "kernel PML4 must be installed before this is called" —
+   which is enforced structurally rather than by the SP runtime check.
 
 ---
 
 ## Summary of Files Changed
 
-| File | Change |
-|---|---|
-| `src/memory/stack.rs` | New — `alloc_kernel_stack`, `switch_stack` |
-| `mantle/src/pml4.rs` | New — `install_kernel_pml4`, `map_hhdm_2m`, `map_range_4k` |
-| `mantle/src/lib.rs` | Add `pub mod pml4` |
-| `src/memory/mod.rs` | Add `pub mod stack`, `pub mod pml4` (re-export) |
-| `src/main.rs` | Restructure into `kernel_main` + `kernel_main_continue`; add steps 6–8 |
-| `src/limine_data.rs` | Remove SP guard; update doc comment on `release()` |
-| `abalone/src/buddy.rs` | (Phase 3 optional) lower-base extension |
+| File | Phase | Status | Change |
+|---|---|---|---|
+| `src/memory/stack.rs` | 1 | Done | `alloc_kernel_stack`, `switch_stack` |
+| `src/post_stack_state.rs` | 1 | Done | `PostStackState` cell for cross-switch data |
+| `src/main.rs` | 1 | Done | `kernel_main` + `kernel_main_continue` split; boot stack capture |
+| `mantle/src/pml4.rs` | 2 | Stub | Add `alloc_zero_frame`, `descend_or_create`, `map_hhdm_2m`, `map_range_4k` |
+| `mantle/src/lib.rs` | 2 | Todo | Add `pub mod pml4` |
+| `src/main.rs` | 2 | Todo | Insert PML4 install step before `boot.release()` |
+| `src/limine_data.rs` | 3 | Todo | Remove SP guard; update `release()` doc comment |
+| `abalone/src/buddy.rs` | 3 | Optional | Lower-base extension for sub-1 MiB region |
 
 ---
 
